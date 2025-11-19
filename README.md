@@ -1,6 +1,17 @@
-# WhatsApp Automation App with WAHA
+# WhatsApp Automation App with WAHA + RAG AI
 
-Full-stack WhatsApp automation application with Sleekflow-style UI. Built with NestJS backend, Next.js frontend, and WAHA (WhatsApp HTTP API) engine.
+Full-stack WhatsApp automation application with Sleekflow-style UI and AI-powered RAG (Retrieval-Augmented Generation) system. Built with NestJS backend, Next.js frontend, Python FastAPI RAG service, and WAHA (WhatsApp HTTP API) engine.
+
+## ⚡ Quick Start
+
+**Pemula? Mulai di sini:**
+- 📖 **[QUICK_START.md](QUICK_START.md)** - Cara tercepat untuk mulai
+- 🚀 **[START_ALL.md](START_ALL.md)** - Panduan lengkap startup semua service
+
+**Otomatis start semua:**
+```powershell
+.\start-all.ps1
+```
 
 ## 🚀 Features
 
@@ -14,9 +25,23 @@ Full-stack WhatsApp automation application with Sleekflow-style UI. Built with N
 ## 📁 Project Structure
 
 ```
-./backend   # NestJS API (TypeORM + MySQL + WAHA connector)
-./frontend  # Next.js (App Router + Tailwind CSS)
+./backend          # NestJS API (TypeORM + MySQL + WAHA connector)
+./frontend         # Next.js WhatsApp Dashboard (App Router + Tailwind CSS)
+./rag-service      # Python FastAPI RAG Service (ChromaDB + LLM)
+  └── web/         # React RAG Web Interface (Vite + Tailwind CSS)
+./media            # WhatsApp media files storage
+./sessions         # WAHA session data
 ```
+
+## 🌐 Service Ports
+
+| Service | Port | URL |
+|---------|------|-----|
+| WAHA (WhatsApp) | 3000 | http://localhost:3000 |
+| Frontend WA Dashboard | 3001 | http://localhost:3001 |
+| RAG Web Interface | 3002 | http://localhost:3002 |
+| Backend API | 4000 | http://localhost:4000 |
+| RAG API | 8001 | http://localhost:8001 |
 
 ## 🛠️ Prerequisites
 
