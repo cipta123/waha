@@ -210,3 +210,6 @@ MIT
 ## 🤝 Contributing
 
 Pull requests are welcome! For major changes, please open an issue first.
+
+## ntuk run waha pakai gows
+docker run -e WHATSAPP_DEFAULT_ENGINE=GOWS -p 3000:3000 devlikeapro/waha
