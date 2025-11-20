@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 500  # Increased overlap for context continuity
     top_k_results: int = 15  # Increased retrieval for comprehensive answers (especially for curriculum)
     temperature: float = 0.4  # Focused and concise while remaining clear
+    use_hybrid_search: bool = True  # Enable hybrid search (semantic + keyword BM25)
+    use_document_agent: bool = False  # Enable document agent for complex reasoning
+    use_agentic_chunking: bool = False  # Enable intelligent chunking with agent during upload
     
     # Server Configuration
     host: str = "0.0.0.0"

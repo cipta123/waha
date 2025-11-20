@@ -1,14 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Bot, User, Loader, FileText } from 'lucide-react'
+import { Send, Bot, User, Loader, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import { queryRAG } from '../api'
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [expandedSources, setExpandedSources] = useState({})
   const messagesEndRef = useRef(null)
+
+  const toggleSources = (messageIndex) => {
+    setExpandedSources(prev => ({
+      ...prev,
+      [messageIndex]: !prev[messageIndex]
+    }))
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -105,16 +113,31 @@ export default function ChatInterface() {
                 </div>
                 
                 {message.sources && message.sources.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-xs text-gray-500 font-medium">Sources ({message.sources.length}):</p>
-                    {message.sources.map((source, idx) => (
-                      <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-2 text-xs">
-                        <div className="flex items-start gap-2">
-                          <FileText className="w-3 h-3 text-gray-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-gray-700 line-clamp-2">{source.content}</p>
-                        </div>
+                  <div className="mt-2 w-full">
+                    <button
+                      onClick={() => toggleSources(index)}
+                      className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                    >
+                      {expandedSources[index] ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                      <span>Sources ({message.sources.length})</span>
+                    </button>
+                    
+                    {expandedSources[index] && (
+                      <div className="mt-2 space-y-1">
+                        {message.sources.map((source, idx) => (
+                          <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-2 text-xs">
+                            <div className="flex items-start gap-2">
+                              <FileText className="w-3 h-3 text-gray-400 flex-shrink-0 mt-0.5" />
+                              <p className="text-gray-700 line-clamp-2">{source.content}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
                 

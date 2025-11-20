@@ -2,10 +2,11 @@ from fastapi import FastAPI, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
-from typing import List
+from typing import List, Optional
 from models import (
     DocumentInput,
     DocumentBatch,
+    UrlInput,
     QueryInput,
     QueryResponse,
     HealthResponse,
@@ -18,11 +19,15 @@ from models import (
     QABatchInput,
     QAItem,
     QAListResponse,
-    QAResponse
+    QAResponse,
+    WhatsAppMessage,
+    WebhookResponse
 )
 from rag_engine import RAGEngine
 from document_parser import DocumentParser
 from config import settings
+from session_manager import SessionManager
+from classifier import MessageRouter
 
 # Configure logging
 logging.basicConfig(
@@ -31,22 +36,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global RAG engine instance
-rag_engine: RAGEngine = None
+# Global instances
+rag_engine: Optional[RAGEngine] = None
+session_manager: Optional[SessionManager] = None
+message_router: Optional[MessageRouter] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager for FastAPI app"""
-    global rag_engine
+    global rag_engine, session_manager, message_router
     
     # Startup
     logger.info("Initializing RAG Engine...")
     try:
         rag_engine = RAGEngine()
-        logger.info("RAG Engine initialized successfully")
+        session_manager = SessionManager()
+        message_router = MessageRouter()
+        logger.info("RAG Engine and components initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize RAG Engine: {e}")
+        logger.error(f"Failed to initialize components: {e}")
         raise
     
     yield
@@ -81,6 +90,63 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs"
     }
+
+
+@app.post("/webhook/whatsapp", response_model=WebhookResponse, tags=["Integration"])
+async def webhook_whatsapp(msg: WhatsAppMessage):
+    """
+    Handle incoming WhatsApp message
+    
+    - **sender_id**: Phone number or ID of the sender
+    - **message**: Content of the message
+    """
+    try:
+        logger.info(f"Received WhatsApp message from {msg.sender_id}: {msg.message[:50]}...")
+        
+        # 1. Check Session Status
+        if not session_manager.should_ai_reply(msg.sender_id):
+            logger.info(f"User {msg.sender_id} is in human mode. Ignoring.")
+            return WebhookResponse(status="human_mode_active", reply=None)
+            
+        # 2. Classify Intent
+        classification = message_router.classify(msg.message)
+        logger.info(f"Classification for {msg.sender_id}: {classification}")
+        
+        action = classification.get("action")
+        
+        # 3. Handle Based on Intent
+        if action == "human_handoff":
+            # Switch to Human Mode
+            session_manager.set_human_mode(msg.sender_id)
+            
+            # Optional: Send a handoff message
+            handoff_msg = classification.get("suggested_response", "Baik, saya akan hubungkan dengan staf kami. Mohon tunggu sebentar.")
+            return WebhookResponse(status="handoff_initiated", reply=handoff_msg)
+            
+        else: # ai_reply
+            # Generate RAG Answer
+            # Get history from session if needed (simplified here)
+            session = session_manager.get_session(msg.sender_id)
+            history = session.get("history", [])[-5:] # Last 5 messages
+            
+            # Perform RAG Query
+            result = rag_engine.query(
+                query=msg.message,
+                history=history
+            )
+            
+            answer = result["answer"]
+            
+            # Update Session
+            session_manager.update_activity(msg.sender_id)
+            # We could append history here for memory
+            
+            return WebhookResponse(status="ai_replied", reply=answer)
+            
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        # Fail safe: don't reply if error, let human handle
+        return WebhookResponse(status="error", reply=None)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -132,6 +198,46 @@ async def ingest_document(document: DocumentInput):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to ingest document: {str(e)}"
+        )
+
+
+@app.post("/ingest/url", response_model=IngestResponse, tags=["Documents"])
+async def ingest_url(url_input: UrlInput):
+    """
+    Ingest a single document from a URL
+    
+    - **url**: The URL to scrape and ingest
+    """
+    try:
+        logger.info(f"Ingesting from URL: {url_input.url}")
+        
+        # Parse URL
+        parsed = DocumentParser.parse_url(url_input.url)
+        
+        # Ingest document
+        doc_id = rag_engine.ingest_document(
+            content=parsed["content"],
+            metadata={
+                "filename": parsed["filename"],
+                "extension": parsed["extension"],
+                "size": parsed["size"],
+                "source_url": parsed["source_url"]
+            }
+        )
+        
+        logger.info(f"URL ingested successfully: {doc_id}")
+        
+        return IngestResponse(
+            success=True,
+            message=f"URL '{url_input.url}' ingested successfully",
+            documents_ingested=1,
+            document_ids=[doc_id]
+        )
+    except Exception as e:
+        logger.error(f"Failed to ingest URL: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to ingest URL: {str(e)}"
         )
 
 

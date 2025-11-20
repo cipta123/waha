@@ -14,6 +14,10 @@ class DocumentBatch(BaseModel):
     """Input model for batch document ingestion"""
     documents: List[DocumentInput] = Field(..., description="List of documents to ingest")
 
+class UrlInput(BaseModel):
+    """Input model for URL ingestion"""
+    url: str = Field(..., description="The URL to ingest")
+
 
 class ChatMessage(BaseModel):
     """Model for a single chat message"""
@@ -132,3 +136,17 @@ class QAResponse(BaseModel):
     success: bool
     message: str
     qa_ids: List[str]
+
+
+# --- Webhook and Chat Models ---
+
+class WhatsAppMessage(BaseModel):
+    """Incoming WhatsApp message model"""
+    sender_id: str = Field(..., description="Unique ID of the sender (e.g., phone number)")
+    message: str = Field(..., description="The text content of the message")
+
+
+class WebhookResponse(BaseModel):
+    """Response for webhook processing"""
+    status: str = Field(..., description="Status of the processing (e.g., 'ai_replied', 'human_handoff', 'ignored')")
+    reply: Optional[str] = Field(None, description="The reply message sent to the user, if any")

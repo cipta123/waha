@@ -17,6 +17,8 @@ export const ingestDocument = (data) => api.post('/ingest', data);
 
 export const ingestBatch = (documents) => api.post('/ingest/batch', { documents });
 
+export const ingestUrl = (url) => api.post('/ingest/url', { url });
+
 export const queryRAG = (query, history = [], topK = null, temperature = null) => 
   api.post('/query', { query, history, top_k: topK, temperature });
 

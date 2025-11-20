@@ -1,6 +1,6 @@
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.vectorstores import Chroma
@@ -10,6 +10,8 @@ from datetime import datetime
 from config import settings
 from groq import Groq
 import google.generativeai as genai
+from rank_bm25 import BM25Okapi
+import re
 
 
 class RAGEngine:
@@ -20,6 +22,8 @@ class RAGEngine:
         self._initialize_vector_db()
         self._initialize_llm()
         self._initialize_text_splitter()
+        self._initialize_bm25()
+        self._initialize_agent()
         
     def _initialize_vector_db(self):
         """Initialize ChromaDB vector database"""
@@ -97,6 +101,123 @@ class RAGEngine:
             separators=["\n\n", "\n", " ", ""]
         )
     
+    def _initialize_bm25(self):
+        """Initialize BM25 retriever for hybrid search"""
+        self.bm25_corpus = []
+        self.bm25_metadata = []
+        self.bm25_index = None
+        self._rebuild_bm25_index()
+    
+    def _rebuild_bm25_index(self):
+        """Rebuild BM25 index from existing documents in ChromaDB"""
+        try:
+            # Get all documents from ChromaDB
+            results = self.collection.get(include=['documents', 'metadatas'])
+            
+            if results and results['documents']:
+                self.bm25_corpus = results['documents']
+                self.bm25_metadata = results['metadatas']
+                
+                # Tokenize corpus for BM25
+                tokenized_corpus = [self._tokenize(doc) for doc in self.bm25_corpus]
+                self.bm25_index = BM25Okapi(tokenized_corpus)
+        except Exception as e:
+            print(f"Warning: Could not rebuild BM25 index: {e}")
+            self.bm25_index = None
+    
+    def _tokenize(self, text: str) -> List[str]:
+        """Tokenize text for BM25"""
+        # Simple tokenization: lowercase, split on non-alphanumeric
+        text = text.lower()
+        tokens = re.findall(r'\w+', text)
+        return tokens
+    
+    def _reciprocal_rank_fusion(
+        self, 
+        results_list: List[List[tuple]], 
+        k: int = 60
+    ) -> List[tuple]:
+        """
+        Combine multiple ranked lists using Reciprocal Rank Fusion
+        
+        Args:
+            results_list: List of ranked result lists [(doc, score), ...]
+            k: Constant for RRF formula (default 60)
+            
+        Returns:
+            Combined and re-ranked results
+        """
+        # Dictionary to store RRF scores
+        rrf_scores = {}
+        
+        for results in results_list:
+            for rank, (doc_id, score) in enumerate(results, 1):
+                if doc_id not in rrf_scores:
+                    rrf_scores[doc_id] = 0
+                rrf_scores[doc_id] += 1 / (k + rank)
+        
+        # Sort by RRF score
+        sorted_results = sorted(
+            rrf_scores.items(), 
+            key=lambda x: x[1], 
+            reverse=True
+        )
+        
+        return sorted_results
+    
+    def _bm25_search(self, query: str, top_k: int = 20) -> List[tuple]:
+        """
+        Perform BM25 keyword search
+        
+        Args:
+            query: Search query
+            top_k: Number of results to return
+            
+        Returns:
+            List of (doc_index, score) tuples
+        """
+        if self.bm25_index is None or len(self.bm25_corpus) == 0:
+            return []
+        
+        # Tokenize query
+        tokenized_query = self._tokenize(query)
+        
+        # Get BM25 scores
+        scores = self.bm25_index.get_scores(tokenized_query)
+        
+        # Get top-k results
+        top_indices = sorted(
+            range(len(scores)), 
+            key=lambda i: scores[i], 
+            reverse=True
+        )[:top_k]
+        
+        # Return as (index, score) tuples
+        return [(idx, scores[idx]) for idx in top_indices if scores[idx] > 0]
+    
+    def _initialize_agent(self):
+        """Initialize Document Agent if enabled"""
+        self.document_agent = None
+        if self.settings.use_document_agent:
+            try:
+                from document_agent import DocumentAgent
+                self.document_agent = DocumentAgent(self)
+                print("Document Agent initialized successfully")
+            except Exception as e:
+                print(f"Warning: Could not initialize Document Agent: {e}")
+                self.document_agent = None
+        
+        # Initialize Agentic Chunker if enabled
+        self.agentic_chunker = None
+        if self.settings.use_agentic_chunking:
+            try:
+                from agentic_chunker import AgenticChunker
+                self.agentic_chunker = AgenticChunker()
+                print("Agentic Chunker initialized successfully")
+            except Exception as e:
+                print(f"Warning: Could not initialize Agentic Chunker: {e}")
+                self.agentic_chunker = None
+    
     def ingest_document(
         self, 
         content: str, 
@@ -127,33 +248,64 @@ class RAGEngine:
         if filename:
             metadata["filename"] = filename
         
-        # Split document into chunks
-        chunks = self.text_splitter.split_text(content)
+        # Use Agentic Chunker if enabled, otherwise use standard chunking
+        if self.agentic_chunker is not None:
+            print(f"Using agentic chunking for {filename or document_id}")
+            intelligent_chunks = self.agentic_chunker.analyze_and_chunk(content, filename or document_id)
+            
+            # Process intelligent chunks
+            batch_size = 50
+            total_chunks = len(intelligent_chunks)
+            
+            for batch_start in range(0, total_chunks, batch_size):
+                batch_end = min(batch_start + batch_size, total_chunks)
+                batch_intelligent = intelligent_chunks[batch_start:batch_end]
+                
+                batch_chunks = [chunk["content"] for chunk in batch_intelligent]
+                batch_metadatas = [
+                    {**metadata, **chunk["metadata"], "total_chunks": total_chunks}
+                    for chunk in batch_intelligent
+                ]
+                batch_ids = [f"{document_id}_chunk_{i}" for i in range(batch_start, batch_end)]
+                
+                # Add batch to vector store
+                self.vector_store.add_texts(
+                    texts=batch_chunks,
+                    metadatas=batch_metadatas,
+                    ids=batch_ids
+                )
+                print(f"Processed intelligent chunks {batch_start+1}-{batch_end} of {total_chunks}")
+        else:
+            # Standard chunking
+            chunks = self.text_splitter.split_text(content)
+            
+            # Add chunks to vector store in batches to avoid token limits
+            batch_size = 50  # Process 50 chunks at a time
+            total_chunks = len(chunks)
+            
+            for batch_start in range(0, total_chunks, batch_size):
+                batch_end = min(batch_start + batch_size, total_chunks)
+                batch_chunks = chunks[batch_start:batch_end]
+                
+                # Prepare metadata for this batch
+                batch_metadatas = [
+                    {**metadata, "chunk_index": i, "total_chunks": total_chunks}
+                    for i in range(batch_start, batch_end)
+                ]
+                
+                batch_ids = [f"{document_id}_chunk_{i}" for i in range(batch_start, batch_end)]
+                
+                # Add batch to vector store
+                self.vector_store.add_texts(
+                    texts=batch_chunks,
+                    metadatas=batch_metadatas,
+                    ids=batch_ids
+                )
+                
+                print(f"Processed chunks {batch_start+1}-{batch_end} of {total_chunks}")
         
-        # Add chunks to vector store in batches to avoid token limits
-        batch_size = 50  # Process 50 chunks at a time
-        total_chunks = len(chunks)
-        
-        for batch_start in range(0, total_chunks, batch_size):
-            batch_end = min(batch_start + batch_size, total_chunks)
-            batch_chunks = chunks[batch_start:batch_end]
-            
-            # Prepare metadata for this batch
-            batch_metadatas = [
-                {**metadata, "chunk_index": i, "total_chunks": total_chunks}
-                for i in range(batch_start, batch_end)
-            ]
-            
-            batch_ids = [f"{document_id}_chunk_{i}" for i in range(batch_start, batch_end)]
-            
-            # Add batch to vector store
-            self.vector_store.add_texts(
-                texts=batch_chunks,
-                metadatas=batch_metadatas,
-                ids=batch_ids
-            )
-            
-            print(f"Processed chunks {batch_start+1}-{batch_end} of {total_chunks}")
+        # Rebuild BM25 index after ingestion
+        self._rebuild_bm25_index()
         
         return document_id
     
@@ -195,10 +347,16 @@ class RAGEngine:
             query: The question to answer
             top_k: Number of documents to retrieve (default from settings)
             temperature: LLM temperature (default from settings)
+            history: Conversation history
             
         Returns:
             Dictionary with answer and sources
         """
+        # Use Document Agent if enabled and available
+        if self.document_agent is not None:
+            return self.document_agent.query(query, history=history)
+        
+        # Otherwise use standard RAG
         if top_k is None:
             top_k = self.settings.top_k_results
         
@@ -216,19 +374,80 @@ class RAGEngine:
             query_expanded = f"{query} OR law OR legal"
         elif "kurikulum" in query.lower():
             query_expanded = f"{query} OR curriculum OR mata kuliah OR course OR struktur kurikulum"
+        elif "magister" in query.lower() or "s2" in query.lower():
+            query_expanded = f"{query} OR pascasarjana OR master OR program magister OR S2"
+        elif "doktor" in query.lower() or "s3" in query.lower():
+            query_expanded = f"{query} OR pascasarjana OR doctoral OR program doktor OR S3"
         
-        # Retrieve relevant documents with improved search
-        # Use MMR (Maximal Marginal Relevance) for diverse results
-        retriever = self.vector_store.as_retriever(
-            search_type="mmr",  # More diverse results
-            search_kwargs={
-                "k": top_k,
-                "fetch_k": top_k * 3,  # Fetch 3x more candidates
-                "lambda_mult": 0.7  # Balance between relevance and diversity
-            }
-        )
-        
-        docs = retriever.get_relevant_documents(query_expanded)
+        # Retrieve relevant documents
+        if self.settings.use_hybrid_search and self.bm25_index is not None:
+            # HYBRID SEARCH: Combine semantic and keyword search
+            
+            # 1. Semantic search (vector similarity)
+            semantic_retriever = self.vector_store.as_retriever(
+                search_type="mmr",
+                search_kwargs={
+                    "k": top_k,
+                    "fetch_k": top_k * 3,
+                    "lambda_mult": 0.7
+                }
+            )
+            semantic_docs = semantic_retriever.invoke(query_expanded)
+            
+            # 2. BM25 keyword search
+            bm25_results = self._bm25_search(query, top_k=top_k)
+            
+            # 3. Combine results using Reciprocal Rank Fusion
+            # Prepare semantic results as (doc_id, score) tuples
+            semantic_results = []
+            doc_map = {}  # Map doc_id to actual document
+            
+            for idx, doc in enumerate(semantic_docs):
+                doc_id = f"semantic_{idx}"
+                doc_map[doc_id] = doc
+                semantic_results.append((doc_id, 1.0 / (idx + 1)))  # Simple ranking score
+            
+            # Prepare BM25 results
+            bm25_ranked = []
+            for idx, score in bm25_results:
+                doc_id = f"bm25_{idx}"
+                # Create document object from BM25 corpus
+                if idx < len(self.bm25_corpus):
+                    from langchain.schema import Document
+                    doc = Document(
+                        page_content=self.bm25_corpus[idx],
+                        metadata=self.bm25_metadata[idx] if idx < len(self.bm25_metadata) else {}
+                    )
+                    doc_map[doc_id] = doc
+                    bm25_ranked.append((doc_id, score))
+            
+            # Apply RRF
+            fused_results = self._reciprocal_rank_fusion([semantic_results, bm25_ranked])
+            
+            # Get top-k unique documents
+            seen_content = set()
+            docs = []
+            for doc_id, score in fused_results:
+                if doc_id in doc_map:
+                    doc = doc_map[doc_id]
+                    # Avoid duplicates based on content
+                    content_hash = hash(doc.page_content[:100])  # Hash first 100 chars
+                    if content_hash not in seen_content:
+                        seen_content.add(content_hash)
+                        docs.append(doc)
+                        if len(docs) >= top_k:
+                            break
+        else:
+            # SEMANTIC ONLY: Original behavior
+            retriever = self.vector_store.as_retriever(
+                search_type="mmr",
+                search_kwargs={
+                    "k": top_k,
+                    "fetch_k": top_k * 3,
+                    "lambda_mult": 0.7
+                }
+            )
+            docs = retriever.invoke(query_expanded)
         
         # Prepare context from retrieved documents
         context = "\n\n".join([doc.page_content for doc in docs])

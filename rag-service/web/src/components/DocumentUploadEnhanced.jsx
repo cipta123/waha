@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { Upload, FileText, CheckCircle, XCircle, Loader, Files } from 'lucide-react'
-import { uploadFile, uploadFiles, ingestDocument } from '../api'
+import { Upload, FileText, CheckCircle, XCircle, Loader, Files, Link } from 'lucide-react'
+import { uploadFile, uploadFiles, ingestDocument, ingestUrl } from '../api'
 
 export default function DocumentUploadEnhanced() {
-  const [mode, setMode] = useState('file') // 'file' or 'text'
+  const [mode, setMode] = useState('file') // 'file', 'text', or 'url'
   const [selectedFiles, setSelectedFiles] = useState([])
   const [content, setContent] = useState('')
   const [metadata, setMetadata] = useState('')
+  const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
 
@@ -31,6 +32,25 @@ export default function DocumentUploadEnhanced() {
       
       setResult({ success: true, data: response.data })
       setSelectedFiles([])
+    } catch (error) {
+      setResult({ 
+        success: false, 
+        error: error.response?.data?.detail || error.message 
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUrlSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setResult(null)
+
+    try {
+      const response = await ingestUrl(url)
+      setResult({ success: true, data: response.data })
+      setUrl('')
     } catch (error) {
       setResult({ 
         success: false, 
@@ -94,6 +114,17 @@ export default function DocumentUploadEnhanced() {
             <FileText className="w-5 h-5 inline mr-2" />
             Paste Text
           </button>
+          <button
+            onClick={() => setMode('url')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+              mode === 'url'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Link className="w-5 h-5 inline mr-2" />
+            Ingest from URL
+          </button>
         </div>
 
         {/* File Upload Mode */}
@@ -101,7 +132,7 @@ export default function DocumentUploadEnhanced() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Files (PDF, DOCX, TXT, MD, CSV)
+                Select Files (PDF, DOCX, TXT, MD, CSV, JSON)
               </label>
               <div className="flex items-center justify-center w-full">
                 <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
@@ -124,7 +155,7 @@ export default function DocumentUploadEnhanced() {
                         <p className="mb-2 text-sm text-gray-500">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
-                        <p className="text-xs text-gray-500">PDF, DOCX, TXT, MD, CSV (multiple files supported)</p>
+                        <p className="text-xs text-gray-500">PDF, DOCX, TXT, MD, CSV, JSON (multiple files supported)</p>
                       </>
                     )}
                   </div>
@@ -132,7 +163,7 @@ export default function DocumentUploadEnhanced() {
                     type="file"
                     className="hidden"
                     multiple
-                    accept=".pdf,.docx,.doc,.txt,.md,.csv"
+                    accept=".pdf,.docx,.doc,.txt,.md,.csv,.json"
                     onChange={handleFileSelect}
                   />
                 </label>
@@ -157,6 +188,42 @@ export default function DocumentUploadEnhanced() {
               )}
             </button>
           </div>
+        )}
+
+        {/* URL Mode */}
+        {mode === 'url' && (
+          <form onSubmit={handleUrlSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Enter URL to Ingest
+              </label>
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="https://example.com/knowledge-page"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || !url}
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  Ingesting...
+                </>
+              ) : (
+                <>
+                  <Link className="w-5 h-5" />
+                  Ingest URL
+                </>
+              )}
+            </button>
+          </form>
         )}
 
         {/* Text Mode */}
