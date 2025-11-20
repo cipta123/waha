@@ -25,4 +25,9 @@ export class MessagesController {
   markAsRead(@Param('conversationId') conversationId: string) {
     return this.messagesService.markAsRead(conversationId);
   }
+
+  @Post('send-image')
+  sendImage(@Body() dto: { chatId: string; file: { mimetype: string; data: string }; caption?: string; session?: string }) {
+    return this.messagesService.sendImage(dto);
+  }
 }

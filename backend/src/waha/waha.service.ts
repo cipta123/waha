@@ -36,6 +36,17 @@ export class WahaService {
     return this.request('POST', '/api/sendText', body);
   }
 
+  async sendImage(payload: { chatId: string; file: { mimetype: string; data: string }; caption?: string; session?: string }) {
+    const body = {
+      session: payload.session ?? this.configService.get('WAHA_DEFAULT_SESSION', 'default'),
+      chatId: payload.chatId,
+      file: payload.file,
+      caption: payload.caption || '',
+    };
+
+    return this.request('POST', '/api/sendImage', body);
+  }
+
   async listSessions() {
     return this.request('GET', '/api/sessions');
   }

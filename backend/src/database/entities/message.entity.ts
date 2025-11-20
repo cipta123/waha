@@ -42,6 +42,18 @@ export class MessageEntity {
   })
   ackStatus?: MessageAckStatus;
 
+  @Column({ nullable: true })
+  mediaUrl?: string;
+
+  @Column({ nullable: true })
+  mediaType?: string; // image, video, audio, document
+
+  @Column({ nullable: true })
+  mimeType?: string; // image/jpeg, image/png, etc
+
+  @Column({ nullable: true })
+  fileName?: string;
+
   @Column({ type: 'json', nullable: true })
   payload?: Record<string, unknown>;
 

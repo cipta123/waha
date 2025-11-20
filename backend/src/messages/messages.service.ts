@@ -200,12 +200,41 @@ export class MessagesService {
 
     const savedConversation = await this.conversationRepository.save(conversation);
 
+    // Extract media info from raw payload
+    const rawMessage = payload.raw as any;
+    let mediaUrl: string | undefined;
+    let mediaType: string | undefined;
+    let mimeType: string | undefined;
+    let fileName: string | undefined;
+
+    if (rawMessage?.hasMedia) {
+      // WAHA provides media URL in the message
+      mediaUrl = rawMessage.media?.url || rawMessage.mediaUrl;
+      mimeType = rawMessage.media?.mimetype || rawMessage.mimetype;
+      fileName = rawMessage.media?.filename || rawMessage.filename;
+
+      // Determine media type from mimetype
+      if (mimeType?.startsWith('image/')) {
+        mediaType = 'image';
+      } else if (mimeType?.startsWith('video/')) {
+        mediaType = 'video';
+      } else if (mimeType?.startsWith('audio/')) {
+        mediaType = 'audio';
+      } else {
+        mediaType = 'document';
+      }
+    }
+
     const message = this.messageRepository.create({
       conversation: savedConversation,
       direction: 'incoming',
-      text: payload.text,
+      text: payload.text || (mediaUrl ? '[Media]' : ''),
       ...(payload.senderName ? { senderName: payload.senderName } : {}),
       ...(payload.waMessageId ? { waMessageId: payload.waMessageId } : {}),
+      ...(mediaUrl ? { mediaUrl } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(mimeType ? { mimeType } : {}),
+      ...(fileName ? { fileName } : {}),
       ...(payload.raw ? { payload: payload.raw } : {}),
     });
 
@@ -226,5 +255,42 @@ export class MessagesService {
 
     this.logger.log(`Marked conversation ${conversationId} as read`);
     return { success: true, conversationId };
+  }
+
+  async sendImage(dto: { chatId: string; file: { mimetype: string; data: string }; caption?: string; session?: string }) {
+    const wahaResponse: any = await this.wahaService.sendImage(dto);
+
+    let conversation = await this.conversationRepository.findOne({
+      where: { waChatId: dto.chatId },
+    });
+
+    if (!conversation) {
+      conversation = this.conversationRepository.create({
+        waChatId: dto.chatId,
+        title: dto.chatId,
+      });
+    }
+
+    conversation.lastMessageAt = new Date();
+    const savedConversation = await this.conversationRepository.save(conversation);
+
+    const message = this.messageRepository.create({
+      conversation: savedConversation,
+      direction: 'outgoing',
+      text: dto.caption || '[Image]',
+      waMessageId: wahaResponse?.id,
+      ackStatus: 'pending',
+      mediaType: 'image',
+      mimeType: dto.file.mimetype,
+      mediaUrl: `data:${dto.file.mimetype};base64,${dto.file.data}`, // Store as data URL for now
+    });
+
+    const savedMessage = await this.messageRepository.save(message);
+
+    return {
+      conversationId: savedConversation.id,
+      messageId: savedMessage.id,
+      waMessageId: wahaResponse?.id,
+    };
   }
 }

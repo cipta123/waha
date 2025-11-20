@@ -56,6 +56,10 @@ export interface Message {
   senderName?: string;
   createdAt: string;
   ackStatus?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+  mediaUrl?: string;
+  mediaType?: string;
+  mimeType?: string;
+  fileName?: string;
 }
 
 export interface SessionSummary {
@@ -79,4 +83,10 @@ export const sendTextMessage = (payload: { chatId: string; text: string; session
 export const markConversationAsRead = (conversationId: string) =>
   apiFetch<{ success: boolean; conversationId: string }>(`/messages/${conversationId}/mark-read`, {
     method: 'POST',
+  });
+
+export const sendImageMessage = (payload: { chatId: string; file: { mimetype: string; data: string }; caption?: string; session?: string }) =>
+  apiFetch<{ conversationId: string; messageId: string }>(`/messages/send-image`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });

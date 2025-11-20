@@ -7,6 +7,7 @@ import {
   fetchMessages,
   fetchSessions,
   sendTextMessage,
+  sendImageMessage,
   markConversationAsRead,
   type Conversation,
   type Message,
@@ -29,10 +30,12 @@ export default function InboxPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   // Ref for auto-scroll to bottom
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conv) => conv.id === selectedConversationId) ?? null,
@@ -128,7 +131,59 @@ export default function InboxPage() {
     }
   }
 
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSendImage() {
+    if (!selectedConversation?.waChatId || !selectedImage) return;
+
+    const base64Data = selectedImage.split(',')[1];
+    const mimeType = selectedImage.split(';')[0].split(':')[1];
+
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      direction: "outgoing",
+      text: composerText.trim() || '[Image]',
+      createdAt: new Date().toISOString(),
+      mediaUrl: selectedImage,
+      mediaType: 'image',
+      mimeType,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setSelectedImage(null);
+    setComposerText("");
+    setSending(true);
+
+    try {
+      await sendImageMessage({
+        chatId: selectedConversation.waChatId,
+        file: { mimetype: mimeType, data: base64Data },
+        caption: composerText.trim(),
+      });
+    } catch (err) {
+      console.error(err);
+      setError((err as Error).message ?? "Failed to send image");
+      setMessages((prev) => prev.filter((msg) => msg.id !== optimisticMessage.id));
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleSend() {
+    if (selectedImage) {
+      await handleSendImage();
+      return;
+    }
+
     if (!selectedConversation?.waChatId || !composerText.trim()) {
       return;
     }
@@ -350,6 +405,16 @@ export default function InboxPage() {
                   {message.direction === "incoming" && message.senderName && (
                     <p className="mb-1 text-xs font-semibold text-slate-500">{message.senderName}</p>
                   )}
+                  {message.mediaType === 'image' && message.mediaUrl && (
+                    <div className="mb-2">
+                      <img 
+                        src={message.mediaUrl} 
+                        alt="Image" 
+                        className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => setSelectedImage(message.mediaUrl!)}
+                      />
+                    </div>
+                  )}
                   <div className="flex items-end gap-2">
                     <p className="text-base leading-relaxed flex-1">{message.text}</p>
                     <span className="flex items-center gap-1 text-[10px] opacity-60 whitespace-nowrap self-end pb-0.5">
@@ -391,10 +456,36 @@ export default function InboxPage() {
               {error}
             </div>
           )}
+          {selectedImage && (
+            <div className="mb-3 relative inline-block">
+              <img src={selectedImage} alt="Preview" className="max-h-32 rounded-lg" />
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div className="flex items-end gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!selectedConversation || sending}
+              className="h-11 rounded-xl border border-slate-300 px-4 text-sm hover:bg-slate-50 disabled:opacity-50"
+              title="Attach image"
+            >
+              📎
+            </button>
             <textarea
               className="h-20 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
-              placeholder={selectedConversation ? "Type your reply" : "Select a conversation"}
+              placeholder={selectedConversation ? (selectedImage ? "Add caption (optional)" : "Type your reply") : "Select a conversation"}
               value={composerText}
               onChange={(event) => setComposerText(event.target.value)}
               disabled={!selectedConversation || sending}
@@ -402,7 +493,7 @@ export default function InboxPage() {
             <button
               className="h-11 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white disabled:opacity-50"
               onClick={() => void handleSend()}
-              disabled={!selectedConversation || sending || !composerText.trim()}
+              disabled={!selectedConversation || sending || (!composerText.trim() && !selectedImage)}
             >
               {sending ? "Sending…" : "Send"}
             </button>
@@ -447,6 +538,27 @@ export default function InboxPage() {
           </section>
         </div>
       </aside>
+
+      {/* Image Lightbox Modal */}
+      {selectedImage && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 p-4"
+          onClick={() => setSelectedImage(null)}
+        >
+          <button
+            onClick={() => setSelectedImage(null)}
+            className="absolute top-4 right-4 text-white text-4xl hover:text-gray-300"
+          >
+            ×
+          </button>
+          <img 
+            src={selectedImage} 
+            alt="Full size" 
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </main>
   );
 }
