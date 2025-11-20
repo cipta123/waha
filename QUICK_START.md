@@ -15,11 +15,20 @@ Script akan otomatis start semua service dengan urutan yang benar!
 
 Buka 6 terminal dan jalankan satu per satu:
 
-#### Terminal 1 - WAHA
+#### Terminal 1 - WAHA Plus
 ```bash
-docker run -it --rm -p 3000:3000/tcp --name waha devlikeapro/waha
+# Login first (use your WAHA Plus key)
+docker login -u devlikeapro -p {YOUR_KEY}
+
+# Run WAHA Plus
+docker run -it --rm -p 3000:3000/tcp --name waha devlikeapro/waha-plus
+
+# Logout after pulling
+docker logout
 ```
 ⏱️ Tunggu 30 detik
+
+**Note:** Get your WAHA Plus key from https://portal.devlike.pro
 
 #### Terminal 2 - Backend
 ```bash

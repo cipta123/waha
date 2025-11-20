@@ -12,7 +12,11 @@ export class WebhookController {
     @Body() body: any,
     @Headers('x-header-1') secret?: string,
   ) {
-    console.log('Webhook received:', JSON.stringify(body, null, 2));
+    console.log('========== WEBHOOK RECEIVED ==========');
+    console.log('Event:', body.event);
+    console.log('Session:', body.session);
+    console.log('Full Payload:', JSON.stringify(body, null, 2));
+    console.log('======================================');
     
     const expected = process.env.WEBHOOK_SECRET;
     if (expected && expected !== secret) {
