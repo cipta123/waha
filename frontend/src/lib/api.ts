@@ -40,6 +40,7 @@ export interface Conversation {
   status: string;
   lastMessageAt?: string;
   updatedAt: string;
+  unreadCount: number;
   lastMessage?: {
     id: string;
     text: string;
@@ -73,4 +74,9 @@ export const sendTextMessage = (payload: { chatId: string; text: string; session
   apiFetch<{ conversationId: string; messageId: string }>(`/messages/send-text`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+
+export const markConversationAsRead = (conversationId: string) =>
+  apiFetch<{ success: boolean; conversationId: string }>(`/messages/${conversationId}/mark-read`, {
+    method: 'POST',
   });

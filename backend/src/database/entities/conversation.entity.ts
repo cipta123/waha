@@ -19,6 +19,9 @@ export class ConversationEntity {
   @Column({ nullable: true })
   lastMessageAt?: Date;
 
+  @Column({ default: 0 })
+  unreadCount!: number;
+
   @ManyToOne(() => UserEntity, (user) => user.conversations, { nullable: true })
   owner?: UserEntity | null;
 

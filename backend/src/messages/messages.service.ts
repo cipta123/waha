@@ -191,10 +191,13 @@ export class MessagesService {
       conversation = this.conversationRepository.create({
         waChatId: payload.chatId,
         title: payload.senderName ?? payload.chatId,
+        unreadCount: 0,
       });
     }
 
     conversation.lastMessageAt = new Date();
+    conversation.unreadCount = (conversation.unreadCount || 0) + 1; // Increment unread count
+
     const savedConversation = await this.conversationRepository.save(conversation);
 
     const message = this.messageRepository.create({
@@ -207,5 +210,21 @@ export class MessagesService {
     });
 
     return this.messageRepository.save(message);
+  }
+
+  async markAsRead(conversationId: string) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    conversation.unreadCount = 0;
+    await this.conversationRepository.save(conversation);
+
+    this.logger.log(`Marked conversation ${conversationId} as read`);
+    return { success: true, conversationId };
   }
 }

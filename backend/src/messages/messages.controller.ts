@@ -20,4 +20,9 @@ export class MessagesController {
   sendText(@Body() dto: SendMessageDto) {
     return this.messagesService.sendText(dto);
   }
+
+  @Post(':conversationId/mark-read')
+  markAsRead(@Param('conversationId') conversationId: string) {
+    return this.messagesService.markAsRead(conversationId);
+  }
 }

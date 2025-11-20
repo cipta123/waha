@@ -7,6 +7,7 @@ import {
   fetchMessages,
   fetchSessions,
   sendTextMessage,
+  markConversationAsRead,
   type Conversation,
   type Message,
   type SessionSummary,
@@ -107,6 +108,18 @@ export default function InboxPage() {
     try {
       const data = await fetchMessages(conversationId);
       setMessages(data);
+      
+      // Mark conversation as read
+      await markConversationAsRead(conversationId);
+      
+      // Update local state to reflect read status
+      setConversations(prev => 
+        prev.map(conv => 
+          conv.id === conversationId 
+            ? { ...conv, unreadCount: 0 }
+            : conv
+        )
+      );
     } catch (err) {
       console.error(err);
       setError((err as Error).message);
@@ -260,10 +273,20 @@ export default function InboxPage() {
                 onClick={() => selectConversation(conversation.id)}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-slate-900">
-                    {conversation.title ?? conversation.waChatId}
-                  </span>
-                  <span className="text-xs text-slate-500">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={classNames(
+                      "font-medium truncate",
+                      conversation.unreadCount > 0 ? "text-slate-900" : "text-slate-900"
+                    )}>
+                      {conversation.title ?? conversation.waChatId}
+                    </span>
+                    {conversation.unreadCount > 0 && (
+                      <span className="flex-shrink-0 flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-green-500 text-white text-xs font-bold">
+                        {conversation.unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-500 ml-2 flex-shrink-0">
                     {conversation.lastMessageAt
                       ? new Date(conversation.lastMessageAt).toLocaleTimeString([], {
                           hour: "2-digit",
