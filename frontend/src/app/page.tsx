@@ -331,12 +331,22 @@ export default function InboxPage() {
                   <span className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     {message.direction === "outgoing" && (
-                      <span className="ml-1">
-                        {message.ackStatus === 'read' && '✓✓'}
-                        {message.ackStatus === 'delivered' && '✓✓'}
-                        {message.ackStatus === 'sent' && '✓'}
-                        {message.ackStatus === 'pending' && '🕐'}
-                        {message.ackStatus === 'failed' && '❌'}
+                      <span className="ml-1 text-sm">
+                        {message.ackStatus === 'read' && (
+                          <span className="text-blue-400 font-bold">✓✓</span>
+                        )}
+                        {message.ackStatus === 'delivered' && (
+                          <span className="text-gray-400 font-bold">✓✓</span>
+                        )}
+                        {message.ackStatus === 'sent' && (
+                          <span className="text-gray-400 font-bold">✓</span>
+                        )}
+                        {message.ackStatus === 'pending' && (
+                          <span className="text-gray-400">🕐</span>
+                        )}
+                        {message.ackStatus === 'failed' && (
+                          <span className="text-red-400">❌</span>
+                        )}
                       </span>
                     )}
                   </span>
