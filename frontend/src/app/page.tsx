@@ -320,7 +320,7 @@ export default function InboxPage() {
                   className={classNames(
                     "max-w-xl rounded-2xl px-4 py-3 text-sm shadow-sm",
                     message.direction === "outgoing"
-                      ? "self-end rounded-br-sm bg-blue-600 text-white"
+                      ? "self-end rounded-br-sm bg-green-100 text-slate-900"
                       : "self-start rounded-bl-sm bg-white text-slate-900",
                   )}
                 >
@@ -333,19 +333,19 @@ export default function InboxPage() {
                     {message.direction === "outgoing" && (
                       <span className="ml-1 text-sm">
                         {message.ackStatus === 'read' && (
-                          <span className="text-blue-400 font-bold">✓✓</span>
+                          <span className="text-blue-500 font-bold">✓✓</span>
                         )}
                         {message.ackStatus === 'delivered' && (
-                          <span className="text-gray-400 font-bold">✓✓</span>
+                          <span className="text-gray-500 font-bold">✓✓</span>
                         )}
                         {message.ackStatus === 'sent' && (
-                          <span className="text-gray-400 font-bold">✓</span>
+                          <span className="text-gray-500 font-bold">✓</span>
                         )}
                         {message.ackStatus === 'pending' && (
-                          <span className="text-gray-400">🕐</span>
+                          <span className="text-gray-500">🕐</span>
                         )}
                         {message.ackStatus === 'failed' && (
-                          <span className="text-red-400">❌</span>
+                          <span className="text-red-500">❌</span>
                         )}
                       </span>
                     )}
