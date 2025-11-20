@@ -20,10 +20,34 @@ export class MessagesService {
   ) {}
 
   async listConversations(limit = 25) {
-    return this.conversationRepository.find({
+    const conversations = await this.conversationRepository.find({
       order: { updatedAt: 'DESC' },
       take: limit,
     });
+
+    // Fetch last message for each conversation
+    const conversationsWithLastMessage = await Promise.all(
+      conversations.map(async (conversation) => {
+        const lastMessage = await this.messageRepository.findOne({
+          where: { conversation: { id: conversation.id } },
+          order: { createdAt: 'DESC' },
+        });
+
+        return {
+          ...conversation,
+          lastMessage: lastMessage
+            ? {
+                id: lastMessage.id,
+                text: lastMessage.text,
+                direction: lastMessage.direction,
+                createdAt: lastMessage.createdAt,
+              }
+            : null,
+        };
+      }),
+    );
+
+    return conversationsWithLastMessage;
   }
 
   async listMessages(conversationId: string) {
@@ -34,7 +58,7 @@ export class MessagesService {
   }
 
   async sendText(dto: SendMessageDto) {
-    await this.wahaService.sendText(dto);
+    const wahaResponse: any = await this.wahaService.sendText(dto);
 
     let conversation = await this.conversationRepository.findOne({
       where: { waChatId: dto.chatId },
@@ -55,6 +79,8 @@ export class MessagesService {
       conversation: savedConversation,
       direction: 'outgoing',
       text: dto.text,
+      waMessageId: wahaResponse?.id, // Save WA message ID for tracking ack
+      ackStatus: 'pending', // Initial status
     });
 
     const savedMessage = await this.messageRepository.save(message);
@@ -62,11 +88,17 @@ export class MessagesService {
     return {
       conversationId: savedConversation.id,
       messageId: savedMessage.id,
+      waMessageId: wahaResponse?.id,
     };
   }
 
   async handleWebhook(event: WebhookEventDto) {
     this.logger.log(`Webhook event: ${event.event} from session ${event.session}`);
+
+    // Handle message.ack event (read receipts)
+    if (event.event === 'message.ack') {
+      return this.handleMessageAck(event.payload);
+    }
 
     // Only process message events
     if (event.event !== 'message') {
@@ -91,6 +123,44 @@ export class MessagesService {
     await this.saveIncomingMessage(payload);
 
     return { processed: 1 };
+  }
+
+  async handleMessageAck(payload: any) {
+    // payload contains: id (waMessageId), ack (status number)
+    // ack: 0=pending, 1=sent, 2=delivered, 3=read, 4=played
+    const waMessageId = payload.id;
+    const ackNumber = payload.ack;
+
+    if (!waMessageId) {
+      this.logger.warn('Message ack without message ID');
+      return { processed: 0 };
+    }
+
+    // Map ack number to status
+    const ackStatusMap: Record<number, string> = {
+      0: 'pending',
+      1: 'sent',
+      2: 'delivered',
+      3: 'read',
+      4: 'read', // played (for voice messages)
+    };
+
+    const ackStatus = ackStatusMap[ackNumber] || 'pending';
+
+    // Find and update message
+    const message = await this.messageRepository.findOne({
+      where: { waMessageId },
+    });
+
+    if (message) {
+      message.ackStatus = ackStatus as any;
+      await this.messageRepository.save(message);
+      this.logger.log(`Updated message ${waMessageId} ack status to ${ackStatus}`);
+      return { processed: 1, messageId: message.id, ackStatus };
+    }
+
+    this.logger.warn(`Message ${waMessageId} not found for ack update`);
+    return { processed: 0 };
   }
 
   async saveIncomingMessage(payload: {

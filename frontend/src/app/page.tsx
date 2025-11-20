@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchConversations,
   fetchHealth,
@@ -28,6 +28,10 @@ export default function InboxPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref for auto-scroll to bottom
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conv) => conv.id === selectedConversationId) ?? null,
@@ -67,6 +71,13 @@ export default function InboxPage() {
 
     return () => clearInterval(interval);
   }, [selectedConversationId]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messages.length > 0 && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   async function bootstrap() {
     try {
@@ -261,7 +272,16 @@ export default function InboxPage() {
                       : ""}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500">{conversation.status}</p>
+                {conversation.lastMessage ? (
+                  <p className="truncate text-xs text-slate-500">
+                    {conversation.lastMessage.direction === 'outgoing' && (
+                      <span className="mr-1">✓</span>
+                    )}
+                    {conversation.lastMessage.text}
+                  </p>
+                ) : (
+                  <p className="text-xs italic text-slate-400">No messages yet</p>
+                )}
               </button>
             ))
           )}
@@ -289,7 +309,7 @@ export default function InboxPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
           {loadingMessages ? (
             <p className="text-sm text-slate-500">Loading messages…</p>
           ) : selectedConversation ? (
@@ -308,11 +328,22 @@ export default function InboxPage() {
                     <p className="mb-1 text-xs font-semibold text-slate-500">{message.senderName}</p>
                   )}
                   <p>{message.text}</p>
-                  <span className="mt-1 block text-right text-[10px] opacity-70">
+                  <span className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {message.direction === "outgoing" && (
+                      <span className="ml-1">
+                        {message.ackStatus === 'read' && '✓✓'}
+                        {message.ackStatus === 'delivered' && '✓✓'}
+                        {message.ackStatus === 'sent' && '✓'}
+                        {message.ackStatus === 'pending' && '🕐'}
+                        {message.ackStatus === 'failed' && '❌'}
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
+              {/* Invisible element at the end for auto-scroll */}
+              <div ref={messagesEndRef} />
             </ol>
           ) : (
             <p className="text-sm text-slate-500">Choose a conversation to start.</p>

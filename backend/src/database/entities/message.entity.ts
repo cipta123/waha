@@ -9,6 +9,7 @@ import {
 import { ConversationEntity } from './conversation.entity';
 
 export type MessageDirection = 'incoming' | 'outgoing';
+export type MessageAckStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 @Entity('messages')
 export class MessageEntity {
@@ -32,6 +33,14 @@ export class MessageEntity {
 
   @Column({ nullable: true })
   waMessageId?: string;
+
+  @Column({ 
+    type: 'enum', 
+    enum: ['pending', 'sent', 'delivered', 'read', 'failed'],
+    default: 'pending',
+    nullable: true 
+  })
+  ackStatus?: MessageAckStatus;
 
   @Column({ type: 'json', nullable: true })
   payload?: Record<string, unknown>;

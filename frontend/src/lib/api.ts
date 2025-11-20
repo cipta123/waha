@@ -40,6 +40,12 @@ export interface Conversation {
   status: string;
   lastMessageAt?: string;
   updatedAt: string;
+  lastMessage?: {
+    id: string;
+    text: string;
+    direction: 'incoming' | 'outgoing';
+    createdAt: string;
+  } | null;
 }
 
 export interface Message {
@@ -48,6 +54,7 @@ export interface Message {
   text: string;
   senderName?: string;
   createdAt: string;
+  ackStatus?: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
 
 export interface SessionSummary {
