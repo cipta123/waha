@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
@@ -29,5 +29,10 @@ export class MessagesController {
   @Post('send-image')
   sendImage(@Body() dto: { chatId: string; file: { mimetype: string; data: string }; caption?: string; session?: string }) {
     return this.messagesService.sendImage(dto);
+  }
+
+  @Get('media/:messageId')
+  async getMedia(@Param('messageId') messageId: string, @Res() res: any) {
+    return this.messagesService.proxyMedia(messageId, res);
   }
 }

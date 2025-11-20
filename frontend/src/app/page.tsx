@@ -408,16 +408,21 @@ export default function InboxPage() {
                   {message.mediaType === 'image' && message.mediaUrl && (
                     <div className="mb-2">
                       <img 
-                        src={message.mediaUrl} 
+                        src={message.mediaUrl.startsWith('data:') ? message.mediaUrl : `http://localhost:4000/api/messages/media/${message.id}`}
                         alt="Image" 
                         className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => setSelectedImage(message.mediaUrl!)}
+                        onClick={() => {
+                          const url = message.mediaUrl?.startsWith('data:') ? message.mediaUrl : `http://localhost:4000/api/messages/media/${message.id}`;
+                          setSelectedImage(url);
+                        }}
                       />
                     </div>
                   )}
                   <div className="flex items-end gap-2">
-                    <p className="text-base leading-relaxed flex-1">{message.text}</p>
-                    <span className="flex items-center gap-1 text-[10px] opacity-60 whitespace-nowrap self-end pb-0.5">
+                    {message.text && !message.text.startsWith('[') && (
+                      <p className="text-base leading-relaxed flex-1">{message.text}</p>
+                    )}
+                    <span className="flex items-center gap-1 text-[10px] opacity-60 whitespace-nowrap self-end pb-0.5 ml-auto">
                       {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       {message.direction === "outgoing" && (
                         <span className="text-base leading-none" style={{ letterSpacing: '-0.35em' }}>

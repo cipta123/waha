@@ -208,8 +208,16 @@ export class MessagesService {
     let fileName: string | undefined;
 
     if (rawMessage?.hasMedia) {
-      mimeType = rawMessage.mimetype;
-      fileName = rawMessage.filename;
+      // WAHA Plus provides media URL directly in webhook
+      if (rawMessage.media?.url) {
+        mediaUrl = rawMessage.media.url;
+        mimeType = rawMessage.media.mimetype || rawMessage.mimetype;
+        fileName = rawMessage.media.filename || rawMessage.filename;
+        this.logger.log(`Media URL from webhook: ${mediaUrl}`);
+      } else {
+        mimeType = rawMessage.mimetype;
+        fileName = rawMessage.filename;
+      }
 
       // Determine media type from mimetype
       if (mimeType?.startsWith('image/')) {
@@ -221,24 +229,12 @@ export class MessagesService {
       } else {
         mediaType = 'document';
       }
-
-      // Download media from WAHA and convert to base64
-      try {
-        const mediaData: any = await this.wahaService.downloadMedia(payload.waMessageId || '');
-        if (mediaData?.mimetype && mediaData?.data) {
-          // WAHA returns base64 data
-          mediaUrl = `data:${mediaData.mimetype};base64,${mediaData.data}`;
-          mimeType = mediaData.mimetype;
-        }
-      } catch (error) {
-        this.logger.error(`Failed to download media: ${error}`);
-      }
     }
 
     const message = this.messageRepository.create({
       conversation: savedConversation,
       direction: 'incoming',
-      text: payload.text || (mediaUrl ? '[Media]' : ''),
+      text: payload.text || (mediaType ? `[${mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : mediaType === 'audio' ? 'Audio' : 'Document'}]` : ''),
       ...(payload.senderName ? { senderName: payload.senderName } : {}),
       ...(payload.waMessageId ? { waMessageId: payload.waMessageId } : {}),
       ...(mediaUrl ? { mediaUrl } : {}),
@@ -302,5 +298,54 @@ export class MessagesService {
       messageId: savedMessage.id,
       waMessageId: wahaResponse?.id,
     };
+  }
+
+  async proxyMedia(messageId: string, res: any) {
+    try {
+      // Find message by ID to get media URL
+      const message = await this.messageRepository.findOne({
+        where: { id: messageId },
+      });
+
+      if (!message || !message.mediaUrl) {
+        return res.status(404).send('Media not found');
+      }
+
+      // If it's a data URL, extract and send
+      if (message.mediaUrl.startsWith('data:')) {
+        const matches = message.mediaUrl.match(/^data:(.+);base64,(.+)$/);
+        if (matches && matches[2]) {
+          const mimeType = matches[1];
+          const base64Data = matches[2];
+          const buffer = Buffer.from(base64Data, 'base64');
+          res.setHeader('Content-Type', mimeType);
+          return res.send(buffer);
+        }
+      }
+
+      // If it's a WAHA URL, proxy it with API Key
+      if (message.mediaUrl.startsWith('http')) {
+        const apiKey = process.env.WAHA_API_KEY;
+        const response = await fetch(message.mediaUrl, {
+          headers: {
+            'X-Api-Key': apiKey || '',
+          },
+        });
+        
+        if (!response.ok) {
+          this.logger.error(`Failed to fetch media from WAHA: ${response.status} ${response.statusText}`);
+          return res.status(response.status).send('Failed to fetch media from WAHA');
+        }
+        
+        const buffer = await response.arrayBuffer();
+        res.setHeader('Content-Type', message.mimeType || 'image/jpeg');
+        return res.send(Buffer.from(buffer));
+      }
+
+      return res.status(404).send('Invalid media URL');
+    } catch (error) {
+      this.logger.error(`Failed to proxy media: ${error}`);
+      return res.status(500).send('Failed to load media');
+    }
   }
 }
