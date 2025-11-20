@@ -208,10 +208,8 @@ export class MessagesService {
     let fileName: string | undefined;
 
     if (rawMessage?.hasMedia) {
-      // WAHA provides media URL in the message
-      mediaUrl = rawMessage.media?.url || rawMessage.mediaUrl;
-      mimeType = rawMessage.media?.mimetype || rawMessage.mimetype;
-      fileName = rawMessage.media?.filename || rawMessage.filename;
+      mimeType = rawMessage.mimetype;
+      fileName = rawMessage.filename;
 
       // Determine media type from mimetype
       if (mimeType?.startsWith('image/')) {
@@ -222,6 +220,18 @@ export class MessagesService {
         mediaType = 'audio';
       } else {
         mediaType = 'document';
+      }
+
+      // Download media from WAHA and convert to base64
+      try {
+        const mediaData: any = await this.wahaService.downloadMedia(payload.waMessageId || '');
+        if (mediaData?.mimetype && mediaData?.data) {
+          // WAHA returns base64 data
+          mediaUrl = `data:${mediaData.mimetype};base64,${mediaData.data}`;
+          mimeType = mediaData.mimetype;
+        }
+      } catch (error) {
+        this.logger.error(`Failed to download media: ${error}`);
       }
     }
 

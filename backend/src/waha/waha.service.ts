@@ -47,6 +47,11 @@ export class WahaService {
     return this.request('POST', '/api/sendImage', body);
   }
 
+  async downloadMedia(messageId: string, session?: string) {
+    const sessionName = session ?? this.configService.get('WAHA_DEFAULT_SESSION', 'default');
+    return this.request('GET', `/api/${sessionName}/messages/${messageId}/media`);
+  }
+
   async listSessions() {
     return this.request('GET', '/api/sessions');
   }
