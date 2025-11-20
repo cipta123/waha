@@ -318,7 +318,7 @@ export default function InboxPage() {
                 <li
                   key={message.id}
                   className={classNames(
-                    "max-w-xl rounded-2xl px-4 py-3 text-sm shadow-sm",
+                    "max-w-xl rounded-2xl px-4 py-3 shadow-sm",
                     message.direction === "outgoing"
                       ? "self-end rounded-br-sm bg-green-100 text-slate-900"
                       : "self-start rounded-bl-sm bg-white text-slate-900",
@@ -327,29 +327,31 @@ export default function InboxPage() {
                   {message.direction === "incoming" && message.senderName && (
                     <p className="mb-1 text-xs font-semibold text-slate-500">{message.senderName}</p>
                   )}
-                  <p>{message.text}</p>
-                  <span className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
-                    {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    {message.direction === "outgoing" && (
-                      <span className="ml-1 text-sm">
-                        {message.ackStatus === 'read' && (
-                          <span className="text-blue-500 font-bold">✓✓</span>
-                        )}
-                        {message.ackStatus === 'delivered' && (
-                          <span className="text-gray-500 font-bold">✓✓</span>
-                        )}
-                        {message.ackStatus === 'sent' && (
-                          <span className="text-gray-500 font-bold">✓</span>
-                        )}
-                        {message.ackStatus === 'pending' && (
-                          <span className="text-gray-500">🕐</span>
-                        )}
-                        {message.ackStatus === 'failed' && (
-                          <span className="text-red-500">❌</span>
-                        )}
-                      </span>
-                    )}
-                  </span>
+                  <div className="flex items-end gap-2">
+                    <p className="text-base leading-relaxed flex-1">{message.text}</p>
+                    <span className="flex items-center gap-1 text-[10px] opacity-60 whitespace-nowrap self-end pb-0.5">
+                      {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {message.direction === "outgoing" && (
+                        <span className="text-base leading-none" style={{ letterSpacing: '-0.35em' }}>
+                          {message.ackStatus === 'read' && (
+                            <span className="font-extrabold" style={{ color: '#53bdeb' }}>✓✓</span>
+                          )}
+                          {message.ackStatus === 'delivered' && (
+                            <span className="text-gray-500 font-extrabold">✓✓</span>
+                          )}
+                          {message.ackStatus === 'sent' && (
+                            <span className="text-gray-500 font-extrabold">✓</span>
+                          )}
+                          {message.ackStatus === 'pending' && (
+                            <span className="text-gray-500 text-sm" style={{ letterSpacing: '0' }}>🕐</span>
+                          )}
+                          {message.ackStatus === 'failed' && (
+                            <span className="text-red-600 text-sm" style={{ letterSpacing: '0' }}>❌</span>
+                          )}
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </li>
               ))}
               {/* Invisible element at the end for auto-scroll */}

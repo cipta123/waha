@@ -147,10 +147,23 @@ export class MessagesService {
 
     const ackStatus = ackStatusMap[ackNumber] || 'pending';
 
-    // Find and update message
-    const message = await this.messageRepository.findOne({
+    // Try exact match first
+    let message = await this.messageRepository.findOne({
       where: { waMessageId },
     });
+
+    // If not found, try partial match (WAHA sometimes sends different ID formats)
+    if (!message) {
+      const messages = await this.messageRepository
+        .createQueryBuilder('message')
+        .where('message.waMessageId LIKE :id', { id: `%${waMessageId.split('_').pop()}%` })
+        .andWhere('message.direction = :direction', { direction: 'outgoing' })
+        .orderBy('message.createdAt', 'DESC')
+        .limit(1)
+        .getOne();
+      
+      message = messages;
+    }
 
     if (message) {
       message.ackStatus = ackStatus as any;
