@@ -57,6 +57,20 @@ export class MessageEntity {
   @Column({ type: 'json', nullable: true })
   payload?: Record<string, unknown>;
 
+  @Column({ type: 'json', nullable: true })
+  quotedMsg?: {
+    id: string;
+    text: string;
+    senderName?: string;
+  };
+
+  @Column({ 
+    type: 'enum', 
+    enum: ['human', 'ai'],
+    nullable: true 
+  })
+  repliedBy?: 'human' | 'ai';
+
   @CreateDateColumn()
   createdAt!: Date;
 

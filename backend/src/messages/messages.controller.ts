@@ -35,4 +35,12 @@ export class MessagesController {
   async getMedia(@Param('messageId') messageId: string, @Res() res: any) {
     return this.messagesService.proxyMedia(messageId, res);
   }
+
+  @Post(':conversationId/toggle-ai-mode')
+  toggleAiMode(
+    @Param('conversationId') conversationId: string,
+    @Body() body: { mode: 'ai' | 'human'; reason?: string }
+  ) {
+    return this.messagesService.toggleAiMode(conversationId, body.mode, body.reason);
+  }
 }

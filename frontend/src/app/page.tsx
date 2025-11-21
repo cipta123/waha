@@ -9,6 +9,7 @@ import {
   sendTextMessage,
   sendImageMessage,
   markConversationAsRead,
+  toggleAiMode,
   type Conversation,
   type Message,
   type SessionSummary,
@@ -23,6 +24,7 @@ export default function InboxPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [composerText, setComposerText] = useState("");
@@ -31,6 +33,11 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [showNewMessageModal, setShowNewMessageModal] = useState(false);
+  const [newMessagePhone, setNewMessagePhone] = useState("");
+  const [newMessageText, setNewMessageText] = useState("");
   
   // Ref for auto-scroll to bottom
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -41,6 +48,23 @@ export default function InboxPage() {
     () => conversations.find((conv) => conv.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+
+  const filteredConversations = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return conversations;
+
+    return conversations.filter((conversation) => {
+      const title = conversation.title?.toLowerCase() ?? "";
+      const waChatId = conversation.waChatId.toLowerCase();
+      const lastMessageText = conversation.lastMessage?.text?.toLowerCase() ?? "";
+
+      return (
+        title.includes(term) ||
+        waChatId.includes(term) ||
+        lastMessageText.includes(term)
+      );
+    });
+  }, [conversations, searchTerm]);
 
   useEffect(() => {
     void bootstrap();
@@ -193,14 +217,18 @@ export default function InboxPage() {
       direction: "outgoing",
       text,
       createdAt: new Date().toISOString(),
+      ...(replyingTo ? { quotedMsg: { id: replyingTo.id, text: replyingTo.text, senderName: replyingTo.senderName } } : {}),
     };
     setMessages((prev) => [...prev, optimisticMessage]);
     setComposerText("");
+    const replyToId = replyingTo?.waMessageId;
+    setReplyingTo(null);
     setSending(true);
     try {
       await sendTextMessage({
         chatId: selectedConversation.waChatId,
         text,
+        ...(replyToId ? { reply_to: replyToId } : {}),
       });
     } catch (err) {
       console.error(err);
@@ -210,6 +238,71 @@ export default function InboxPage() {
       setComposerText(text);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleSendNewMessage() {
+    if (!newMessagePhone.trim() || !newMessageText.trim()) {
+      setError("Phone number and message are required");
+      return;
+    }
+
+    // Format phone number to WhatsApp format (e.g., 628xxx@c.us)
+    let formattedPhone = newMessagePhone.trim().replace(/\D/g, ''); // Remove non-digits
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '62' + formattedPhone.substring(1); // Replace leading 0 with 62
+    } else if (!formattedPhone.startsWith('62')) {
+      formattedPhone = '62' + formattedPhone; // Add 62 prefix
+    }
+    const chatId = `${formattedPhone}@c.us`;
+
+    setSending(true);
+    setError(null);
+    try {
+      const result = await sendTextMessage({
+        chatId,
+        text: newMessageText.trim(),
+      });
+
+      // Close modal and reset form
+      setShowNewMessageModal(false);
+      setNewMessagePhone("");
+      setNewMessageText("");
+
+      // Refresh conversations to show the new one
+      const conversationsRes = await fetchConversations();
+      setConversations(conversationsRes);
+
+      // Find and select the new conversation
+      const newConv = conversationsRes.find(c => c.id === result.conversationId);
+      if (newConv) {
+        await selectConversation(newConv.id);
+      }
+    } catch (err) {
+      console.error(err);
+      setError((err as Error).message ?? "Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleToggleAiMode(mode: 'ai' | 'human') {
+    if (!selectedConversation) return;
+
+    try {
+      await toggleAiMode(selectedConversation.id, mode);
+      
+      // Update local state
+      setConversations(prev => prev.map(c => 
+        c.id === selectedConversation.id ? { ...c, mode } : c
+      ));
+      
+      // Update selected conversation
+      const updated = { ...selectedConversation, mode };
+      setConversations(prev => prev.map(c => c.id === updated.id ? updated : c));
+    } catch (err) {
+      console.error('Failed to toggle AI mode:', err);
+      setError((err as Error).message ?? "Failed to toggle AI mode");
     }
   }
 
@@ -297,28 +390,39 @@ export default function InboxPage() {
             <p className="text-xs font-semibold uppercase text-slate-500">Assigned</p>
             <h2 className="text-lg font-semibold">Inbox</h2>
           </div>
-          <button
-            className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
-            onClick={() => bootstrap()}
-            disabled={loadingConversations}
-          >
-            Refresh
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+              onClick={() => bootstrap()}
+              disabled={loadingConversations}
+            >
+              Refresh
+            </button>
+            <button
+              className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+              onClick={() => setShowNewMessageModal(true)}
+            >
+              + New
+            </button>
+          </div>
         </div>
         <div className="px-4 py-2">
           <input
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             placeholder="Search conversations"
-            disabled
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
           />
         </div>
         <div className="flex-1 overflow-y-auto">
           {loadingConversations ? (
             <p className="px-6 py-4 text-sm text-slate-500">Loading conversations…</p>
-          ) : conversations.length === 0 ? (
-            <p className="px-6 py-4 text-sm text-slate-500">No conversations yet.</p>
+          ) : filteredConversations.length === 0 ? (
+            <p className="px-6 py-4 text-sm text-slate-500">
+              {searchTerm.trim() ? "No conversations match your search." : "No conversations yet."}
+            </p>
           ) : (
-            conversations.map((conversation) => (
+            filteredConversations.map((conversation) => (
               <button
                 key={conversation.id}
                 className={classNames(
@@ -334,6 +438,15 @@ export default function InboxPage() {
                       conversation.unreadCount > 0 ? "text-slate-900" : "text-slate-900"
                     )}>
                       {conversation.title ?? conversation.waChatId}
+                    </span>
+                    {/* AI/Human Mode Badge */}
+                    <span className={classNames(
+                      "flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded",
+                      conversation.mode === 'ai' 
+                        ? "bg-blue-100 text-blue-700" 
+                        : "bg-green-100 text-green-700"
+                    )}>
+                      {conversation.mode === 'ai' ? '🤖' : '👤'}
                     </span>
                     {conversation.unreadCount > 0 && (
                       <span className="flex-shrink-0 flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-green-500 text-white text-xs font-bold">
@@ -369,11 +482,45 @@ export default function InboxPage() {
       {/* Chat area */}
       <section className="flex min-w-0 flex-1 flex-col bg-slate-25">
         <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3">
-          <div>
+          <div className="flex-1">
             <p className="text-xs uppercase text-slate-500">Conversation</p>
             <h1 className="text-xl font-semibold">
               {selectedConversation ? selectedConversation.title ?? selectedConversation.waChatId : "Select a conversation"}
             </h1>
+            
+            {/* AI Mode Toggle */}
+            {selectedConversation && (
+              <div className="mt-2 flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="text-xs font-medium text-slate-600">AI Mode:</span>
+                  <button
+                    onClick={() => handleToggleAiMode(selectedConversation.mode === 'ai' ? 'human' : 'ai')}
+                    className={classNames(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      selectedConversation.mode === 'ai' ? "bg-blue-600" : "bg-slate-300"
+                    )}
+                  >
+                    <span
+                      className={classNames(
+                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                        selectedConversation.mode === 'ai' ? "translate-x-5" : "translate-x-1"
+                      )}
+                    />
+                  </button>
+                  <span className={classNames(
+                    "text-xs font-semibold",
+                    selectedConversation.mode === 'ai' ? "text-blue-600" : "text-slate-600"
+                  )}>
+                    {selectedConversation.mode === 'ai' ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+                {selectedConversation.mode === 'ai' && selectedConversation.lastAiReplyAt && (
+                  <span className="text-xs text-slate-500">
+                    Last AI reply: {new Date(selectedConversation.lastAiReplyAt).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-600">
             {sessions.map((session, index) => (
@@ -396,14 +543,75 @@ export default function InboxPage() {
                 <li
                   key={message.id}
                   className={classNames(
-                    "max-w-xl rounded-2xl px-4 py-3 shadow-sm",
+                    "max-w-xl rounded-2xl px-4 py-3 shadow-sm group relative",
                     message.direction === "outgoing"
                       ? "self-end rounded-br-sm bg-green-100 text-slate-900"
                       : "self-start rounded-bl-sm bg-white text-slate-900",
                   )}
                 >
+                  {/* AI/Human Badge for outgoing messages */}
+                  {message.direction === "outgoing" && message.repliedBy && (
+                    <div className="absolute -top-2 -right-2">
+                      <span className={classNames(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-sm",
+                        message.repliedBy === 'ai' 
+                          ? "bg-blue-500 text-white" 
+                          : "bg-green-600 text-white"
+                      )}>
+                        {message.repliedBy === 'ai' ? '🤖 AI' : '👤 Human'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Three-dot menu button */}
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === message.id ? null : message.id)}
+                      className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100"
+                      title="Message options"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
+                        <circle cx="2" cy="8" r="1.5"/>
+                        <circle cx="8" cy="8" r="1.5"/>
+                        <circle cx="14" cy="8" r="1.5"/>
+                      </svg>
+                    </button>
+                    
+                    {/* Dropdown menu */}
+                    {openMenuId === message.id && (
+                      <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10">
+                        <button
+                          onClick={() => {
+                            setReplyingTo(message);
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                        >
+                          Reply
+                        </button>
+                        <button
+                          onClick={() => {
+                            // TODO: Implement delete functionality
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {message.direction === "incoming" && message.senderName && (
                     <p className="mb-1 text-xs font-semibold text-slate-500">{message.senderName}</p>
+                  )}
+                  
+                  {/* Display quoted message if exists */}
+                  {message.quotedMsg && (
+                    <div className="mb-2 border-l-4 border-slate-400 bg-slate-50 px-3 py-2 rounded">
+                      <p className="text-xs font-semibold text-slate-600">{message.quotedMsg.senderName || 'Unknown'}</p>
+                      <p className="text-xs text-slate-500 truncate">{message.quotedMsg.text}</p>
+                    </div>
                   )}
                   {message.mediaType === 'image' && message.mediaUrl && (
                     <div className="mb-2">
@@ -459,6 +667,23 @@ export default function InboxPage() {
           {error && (
             <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
               {error}
+            </div>
+          )}
+          {replyingTo && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border-l-4 border-blue-500 bg-blue-50 px-3 py-2">
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-blue-900">
+                  Replying to {replyingTo.senderName || (replyingTo.direction === 'outgoing' ? 'You' : 'Contact')}
+                </p>
+                <p className="text-xs text-blue-700 truncate">{replyingTo.text}</p>
+              </div>
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="text-blue-900 hover:text-blue-700 font-bold"
+                title="Cancel reply"
+              >
+                ×
+              </button>
             </div>
           )}
           {selectedImage && (
@@ -562,6 +787,84 @@ export default function InboxPage() {
             className="max-w-full max-h-full object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* New Message Modal */}
+      {showNewMessageModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
+          onClick={() => setShowNewMessageModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900">New Message</h2>
+              <button
+                onClick={() => setShowNewMessageModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder="628xxx or 08xxx"
+                  value={newMessagePhone}
+                  onChange={(e) => setNewMessagePhone(e.target.value)}
+                  disabled={sending}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Format: 628xxx or 08xxx (will be auto-formatted)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Message
+                </label>
+                <textarea
+                  className="w-full h-32 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder="Type your message here..."
+                  value={newMessageText}
+                  onChange={(e) => setNewMessageText(e.target.value)}
+                  disabled={sending}
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowNewMessageModal(false)}
+                  className="px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg"
+                  disabled={sending}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleSendNewMessage()}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  disabled={sending || !newMessagePhone.trim() || !newMessageText.trim()}
+                >
+                  {sending ? "Sending..." : "Send Message"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </main>

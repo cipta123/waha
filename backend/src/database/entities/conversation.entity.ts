@@ -22,6 +22,15 @@ export class ConversationEntity {
   @Column({ default: 0 })
   unreadCount!: number;
 
+  @Column({ default: 'ai' })
+  mode!: 'ai' | 'human';
+
+  @Column({ nullable: true })
+  lastAiReplyAt?: Date;
+
+  @Column({ nullable: true })
+  handoffReason?: string;
+
   @ManyToOne(() => UserEntity, (user) => user.conversations, { nullable: true })
   owner?: UserEntity | null;
 

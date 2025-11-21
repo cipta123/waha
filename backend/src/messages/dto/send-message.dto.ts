@@ -12,4 +12,8 @@ export class SendMessageDto {
   @IsOptional()
   @IsString()
   session?: string;
+
+  @IsOptional()
+  @IsString()
+  reply_to?: string; // WA message ID to reply to
 }

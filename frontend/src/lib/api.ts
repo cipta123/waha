@@ -41,6 +41,9 @@ export interface Conversation {
   lastMessageAt?: string;
   updatedAt: string;
   unreadCount: number;
+  mode: 'ai' | 'human';
+  lastAiReplyAt?: string;
+  handoffReason?: string;
   lastMessage?: {
     id: string;
     text: string;
@@ -60,6 +63,13 @@ export interface Message {
   mediaType?: string;
   mimeType?: string;
   fileName?: string;
+  waMessageId?: string;
+  repliedBy?: 'human' | 'ai';
+  quotedMsg?: {
+    id: string;
+    text: string;
+    senderName?: string;
+  };
 }
 
 export interface SessionSummary {
@@ -74,7 +84,7 @@ export const fetchConversations = () => apiFetch<Conversation[]>('/messages/conv
 export const fetchMessages = (conversationId: string) =>
   apiFetch<Message[]>(`/messages/${conversationId}`);
 export const fetchSessions = () => apiFetch<SessionSummary[]>('/sessions');
-export const sendTextMessage = (payload: { chatId: string; text: string; session?: string }) =>
+export const sendTextMessage = (payload: { chatId: string; text: string; session?: string; reply_to?: string }) =>
   apiFetch<{ conversationId: string; messageId: string }>(`/messages/send-text`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -89,4 +99,10 @@ export const sendImageMessage = (payload: { chatId: string; file: { mimetype: st
   apiFetch<{ conversationId: string; messageId: string }>(`/messages/send-image`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+
+export const toggleAiMode = (conversationId: string, mode: 'ai' | 'human', reason?: string) =>
+  apiFetch<{ success: boolean; conversationId: string; mode: string }>(`/messages/${conversationId}/toggle-ai-mode`, {
+    method: 'POST',
+    body: JSON.stringify({ mode, reason }),
   });

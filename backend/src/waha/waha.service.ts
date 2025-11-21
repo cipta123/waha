@@ -7,6 +7,7 @@ interface SendTextPayload {
   chatId: string;
   text: string;
   session?: string;
+  reply_to?: string;
 }
 
 @Injectable()
@@ -27,11 +28,15 @@ export class WahaService {
   }
 
   async sendText(payload: SendTextPayload) {
-    const body = {
+    const body: any = {
       session: payload.session ?? this.configService.get('WAHA_DEFAULT_SESSION', 'default'),
       chatId: payload.chatId,
       text: payload.text,
     };
+
+    if (payload.reply_to) {
+      body.reply_to = payload.reply_to;
+    }
 
     return this.request('POST', '/api/sendText', body);
   }

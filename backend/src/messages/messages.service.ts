@@ -75,15 +75,39 @@ export class MessagesService {
 
     const savedConversation = await this.conversationRepository.save(conversation);
 
+    // If replying to a message, fetch the quoted message details
+    let quotedMsg: any = undefined;
+    if (dto.reply_to) {
+      const replyToMessage = await this.messageRepository.findOne({
+        where: { waMessageId: dto.reply_to },
+      });
+      if (replyToMessage) {
+        quotedMsg = {
+          id: replyToMessage.id,
+          text: replyToMessage.text,
+          senderName: replyToMessage.senderName,
+        };
+      }
+    }
+
     const message = this.messageRepository.create({
       conversation: savedConversation,
       direction: 'outgoing',
       text: dto.text,
       waMessageId: wahaResponse?.id, // Save WA message ID for tracking ack
       ackStatus: 'pending', // Initial status
+      repliedBy: 'human', // Messages from dashboard are replied by human
+      ...(quotedMsg ? { quotedMsg } : {}),
     });
 
     const savedMessage = await this.messageRepository.save(message);
+
+    // When human replies, switch conversation to human mode
+    if (savedConversation.mode === 'ai') {
+      savedConversation.mode = 'human';
+      await this.conversationRepository.save(savedConversation);
+      this.logger.log(`Conversation ${savedConversation.id} switched to human mode after manual reply`);
+    }
 
     return {
       conversationId: savedConversation.id,
@@ -107,20 +131,43 @@ export class MessagesService {
 
     // Extract message from payload
     const message = event.payload;
-    if (!message || !message.from) {
-      this.logger.warn('Message event without valid payload');
+    
+    // Check if message is outgoing (fromMe = true) or incoming
+    const isOutgoing = message.fromMe === true;
+    
+    // For outgoing messages, chatId is in 'to' field, for incoming it's in 'from'
+    const chatId = isOutgoing ? message.to : message.from;
+    
+    if (!message || !chatId) {
+      this.logger.warn('Message event without valid payload or chatId');
+      this.logger.warn(`fromMe: ${message?.fromMe}, from: ${message?.from}, to: ${message?.to}`);
       return { processed: 0 };
     }
 
-    const payload = {
-      chatId: message.from,
-      text: message.body || '',
-      ...(message.id ? { waMessageId: message.id } : {}),
-      ...(message.pushName ? { senderName: message.pushName } : {}),
-      ...(message ? { raw: message as Record<string, unknown> } : {}),
-    };
+    this.logger.log(`Processing ${isOutgoing ? 'OUTGOING' : 'INCOMING'} message to/from: ${chatId}`);
 
-    await this.saveIncomingMessage(payload);
+    if (isOutgoing) {
+      // Handle outgoing message sent from WhatsApp app
+      const payload = {
+        chatId: chatId,
+        text: message.body || '',
+        ...(message.id ? { waMessageId: message.id } : {}),
+        ...(message ? { raw: message as Record<string, unknown> } : {}),
+      };
+      await this.saveOutgoingMessage(payload);
+      this.logger.log(`Saved outgoing message to ${chatId}`);
+    } else {
+      // Handle incoming message
+      const payload = {
+        chatId: chatId,
+        text: message.body || '',
+        ...(message.id ? { waMessageId: message.id } : {}),
+        ...(message.pushName ? { senderName: message.pushName } : {}),
+        ...(message ? { raw: message as Record<string, unknown> } : {}),
+      };
+      await this.saveIncomingMessage(payload);
+      this.logger.log(`Saved incoming message from ${chatId}`);
+    }
 
     return { processed: 1 };
   }
@@ -174,6 +221,71 @@ export class MessagesService {
 
     this.logger.warn(`Message ${waMessageId} not found for ack update`);
     return { processed: 0 };
+  }
+
+  async saveOutgoingMessage(payload: {
+    chatId: string;
+    text: string;
+    waMessageId?: string;
+    raw?: Record<string, unknown>;
+  }) {
+    let conversation = await this.conversationRepository.findOne({
+      where: { waChatId: payload.chatId },
+    });
+
+    if (!conversation) {
+      conversation = this.conversationRepository.create({
+        waChatId: payload.chatId,
+        title: payload.chatId,
+        unreadCount: 0,
+      });
+    }
+
+    conversation.lastMessageAt = new Date();
+    const savedConversation = await this.conversationRepository.save(conversation);
+
+    // Extract media info from raw payload
+    const rawMessage = payload.raw as any;
+    let mediaUrl: string | undefined;
+    let mediaType: string | undefined;
+    let mimeType: string | undefined;
+    let fileName: string | undefined;
+
+    if (rawMessage?.hasMedia) {
+      if (rawMessage.media?.url) {
+        mediaUrl = rawMessage.media.url;
+        mimeType = rawMessage.media.mimetype || rawMessage.mimetype;
+        fileName = rawMessage.media.filename || rawMessage.filename;
+      } else {
+        mimeType = rawMessage.mimetype;
+        fileName = rawMessage.filename;
+      }
+
+      if (mimeType?.startsWith('image/')) {
+        mediaType = 'image';
+      } else if (mimeType?.startsWith('video/')) {
+        mediaType = 'video';
+      } else if (mimeType?.startsWith('audio/')) {
+        mediaType = 'audio';
+      } else {
+        mediaType = 'document';
+      }
+    }
+
+    const message = this.messageRepository.create({
+      conversation: savedConversation,
+      direction: 'outgoing',
+      text: payload.text || (mediaType ? `[${mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : mediaType === 'audio' ? 'Audio' : 'Document'}]` : ''),
+      ...(payload.waMessageId ? { waMessageId: payload.waMessageId } : {}),
+      ...(mediaUrl ? { mediaUrl } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(mimeType ? { mimeType } : {}),
+      ...(fileName ? { fileName } : {}),
+      ...(payload.raw ? { payload: payload.raw } : {}),
+      ackStatus: 'sent', // Outgoing messages from WA app are already sent
+    });
+
+    return this.messageRepository.save(message);
   }
 
   async saveIncomingMessage(payload: {
@@ -297,6 +409,32 @@ export class MessagesService {
       conversationId: savedConversation.id,
       messageId: savedMessage.id,
       waMessageId: wahaResponse?.id,
+    };
+  }
+
+  async toggleAiMode(conversationId: string, mode: 'ai' | 'human', reason?: string) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    conversation.mode = mode;
+    if (reason) {
+      conversation.handoffReason = reason;
+    }
+
+    await this.conversationRepository.save(conversation);
+
+    this.logger.log(`Conversation ${conversationId} mode changed to ${mode}`);
+
+    return {
+      success: true,
+      conversationId,
+      mode,
+      reason,
     };
   }
 
