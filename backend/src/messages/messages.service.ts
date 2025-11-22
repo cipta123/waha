@@ -6,6 +6,7 @@ import { MessageEntity } from '../database/entities/message.entity';
 import { SendMessageDto } from './dto/send-message.dto';
 import { WahaService } from '../waha/waha.service';
 import { WebhookEventDto } from './dto/webhook-event.dto';
+import { RagService } from '../rag/rag.service';
 
 @Injectable()
 export class MessagesService {
@@ -17,6 +18,7 @@ export class MessagesService {
     @InjectRepository(MessageEntity)
     private readonly messageRepository: Repository<MessageEntity>,
     private readonly wahaService: WahaService,
+    private readonly ragService: RagService,
   ) {}
 
   async listConversations(limit = 25) {
@@ -50,11 +52,26 @@ export class MessagesService {
     return conversationsWithLastMessage;
   }
 
-  async listMessages(conversationId: string) {
-    return this.messageRepository.find({
+  async listMessages(conversationId: string, limit = 50, offset = 0) {
+    // Get total count
+    const total = await this.messageRepository.count({
       where: { conversation: { id: conversationId } },
-      order: { createdAt: 'ASC' },
     });
+
+    // Get messages in DESC order (newest first), then reverse to show oldest first
+    const messages = await this.messageRepository.find({
+      where: { conversation: { id: conversationId } },
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
+    });
+
+    // Reverse to show in chronological order (oldest to newest)
+    return {
+      messages: messages.reverse(),
+      total,
+      hasMore: offset + limit < total,
+    };
   }
 
   async sendText(dto: SendMessageDto) {
@@ -124,7 +141,7 @@ export class MessagesService {
       return this.handleMessageAck(event.payload);
     }
 
-    // Only process message events
+    // Only process 'message' event (skip 'message.any' to avoid duplicates)
     if (event.event !== 'message') {
       return { processed: 0, event: event.event };
     }
@@ -304,7 +321,13 @@ export class MessagesService {
         waChatId: payload.chatId,
         title: payload.senderName ?? payload.chatId,
         unreadCount: 0,
+        mode: 'ai', // Default to AI mode for new conversations
       });
+    }
+
+    // Ensure mode is set for existing conversations (migration fix)
+    if (!conversation.mode) {
+      conversation.mode = 'ai';
     }
 
     conversation.lastMessageAt = new Date();
@@ -356,7 +379,81 @@ export class MessagesService {
       ...(payload.raw ? { payload: payload.raw } : {}),
     });
 
-    return this.messageRepository.save(message);
+    const savedMessage = await this.messageRepository.save(message);
+
+    // Log conversation mode for debugging
+    this.logger.log(`Conversation ${savedConversation.id} mode: ${savedConversation.mode}, has text: ${!!payload.text}`);
+
+    // Only process AI classification if conversation is in AI mode
+    if (savedConversation.mode === 'ai' && payload.text) {
+      this.logger.log(`Processing AI classification for conversation ${savedConversation.id}`);
+      
+      // Call RAG service asynchronously (don't block webhook response)
+      this.handleAiClassification(savedConversation, payload.text, payload.senderName)
+        .catch(err => {
+          this.logger.error(`AI classification failed: ${err.message}`);
+        });
+    } else {
+      this.logger.log(`Skipping AI classification - mode: ${savedConversation.mode}, text: ${payload.text ? 'yes' : 'no'}`);
+    }
+
+    return savedMessage;
+  }
+
+  private async handleAiClassification(
+    conversation: ConversationEntity,
+    messageText: string,
+    senderName?: string,
+  ) {
+    try {
+      // Classify message intent
+      const classification = await this.ragService.classifyMessage({
+        sender_id: conversation.waChatId,
+        message: messageText,
+      });
+
+      this.logger.log(`Classification result for ${conversation.waChatId}: ${classification.status}`);
+
+      if (classification.status === 'ai_replied' && classification.reply) {
+        // Send AI auto-reply
+        this.logger.log(`Sending AI auto-reply to ${conversation.waChatId}`);
+        
+        const wahaResponse: any = await this.wahaService.sendText({
+          chatId: conversation.waChatId,
+          text: classification.reply,
+        });
+
+        // Save the AI reply message
+        const aiMessage = this.messageRepository.create({
+          conversation,
+          direction: 'outgoing',
+          text: classification.reply,
+          waMessageId: wahaResponse?.id,
+          ackStatus: 'pending',
+          repliedBy: 'ai',
+        });
+
+        await this.messageRepository.save(aiMessage);
+
+        // Update conversation with last AI reply timestamp
+        conversation.lastAiReplyAt = new Date();
+        await this.conversationRepository.save(conversation);
+
+        this.logger.log(`AI auto-reply sent successfully to ${conversation.waChatId}`);
+      } else if (classification.status === 'human_handoff' || classification.status === 'human_mode_active' || classification.status === 'handoff_initiated') {
+        // Switch to human mode
+        this.logger.log(`Switching conversation ${conversation.id} to human mode: ${classification.reason || 'human mode active'}`);
+        
+        conversation.mode = 'human';
+        conversation.handoffReason = classification.reason || 'User requested human assistance';
+        await this.conversationRepository.save(conversation);
+
+        this.logger.log(`Conversation ${conversation.id} switched to human mode`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Error in AI classification: ${error?.message || error}`);
+      throw error;
+    }
   }
 
   async markAsRead(conversationId: string) {
@@ -427,6 +524,20 @@ export class MessagesService {
     }
 
     await this.conversationRepository.save(conversation);
+
+    // If switching to AI mode, reset RAG service session
+    if (mode === 'ai') {
+      try {
+        // Call RAG service to reset session (we'll use a dummy message to trigger reset)
+        await this.ragService.classifyMessage({
+          sender_id: conversation.waChatId,
+          message: '__RESET_SESSION__', // Special message to reset
+        });
+        this.logger.log(`Reset RAG service session for ${conversation.waChatId}`);
+      } catch (error: any) {
+        this.logger.warn(`Failed to reset RAG session: ${error?.message}`);
+      }
+    }
 
     this.logger.log(`Conversation ${conversationId} mode changed to ${mode}`);
 

@@ -6,11 +6,13 @@ import { MessagesService } from './messages.service';
 import { ConversationEntity } from '../database/entities/conversation.entity';
 import { MessageEntity } from '../database/entities/message.entity';
 import { WahaModule } from '../waha/waha.module';
+import { RagModule } from '../rag/rag.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ConversationEntity, MessageEntity]),
     WahaModule,
+    RagModule,
   ],
   controllers: [MessagesController, WebhookController],
   providers: [MessagesService],

@@ -79,10 +79,16 @@ export interface SessionSummary {
   engine?: string;
 }
 
+export interface MessagesResponse {
+  messages: Message[];
+  total: number;
+  hasMore: boolean;
+}
+
 export const fetchHealth = () => apiFetch<HealthResponse>('/health');
 export const fetchConversations = () => apiFetch<Conversation[]>('/messages/conversations');
-export const fetchMessages = (conversationId: string) =>
-  apiFetch<Message[]>(`/messages/${conversationId}`);
+export const fetchMessages = (conversationId: string, limit = 50, offset = 0) =>
+  apiFetch<MessagesResponse>(`/messages/${conversationId}?limit=${limit}&offset=${offset}`);
 export const fetchSessions = () => apiFetch<SessionSummary[]>('/sessions');
 export const sendTextMessage = (payload: { chatId: string; text: string; session?: string; reply_to?: string }) =>
   apiFetch<{ conversationId: string; messageId: string }>(`/messages/send-text`, {

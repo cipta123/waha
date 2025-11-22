@@ -103,6 +103,12 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
     try:
         logger.info(f"Received WhatsApp message from {msg.sender_id}: {msg.message[:50]}...")
         
+        # Handle reset session command
+        if msg.message == "__RESET_SESSION__":
+            logger.info(f"Resetting session for {msg.sender_id} to AI mode")
+            session_manager.set_ai_mode(msg.sender_id)
+            return WebhookResponse(status="session_reset", reply=None)
+        
         # 1. Check Session Status
         if not session_manager.should_ai_reply(msg.sender_id):
             logger.info(f"User {msg.sender_id} is in human mode. Ignoring.")

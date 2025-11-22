@@ -12,8 +12,12 @@ export class MessagesController {
   }
 
   @Get(':conversationId')
-  listMessages(@Param('conversationId') conversationId: string) {
-    return this.messagesService.listMessages(conversationId);
+  listMessages(
+    @Param('conversationId') conversationId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.messagesService.listMessages(conversationId, limit, offset);
   }
 
   @Post('send-text')

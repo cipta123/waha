@@ -27,6 +27,8 @@ export default function InboxPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [composerText, setComposerText] = useState("");
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -70,7 +72,7 @@ export default function InboxPage() {
     void bootstrap();
   }, []);
 
-  // Poll for new conversations every 5 seconds
+  // Poll for new conversations every 1 second for real-time updates
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -79,7 +81,7 @@ export default function InboxPage() {
       } catch (err) {
         console.error('Failed to refresh conversations:', err);
       }
-    }, 5000);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, []);
@@ -91,7 +93,37 @@ export default function InboxPage() {
     const interval = setInterval(async () => {
       try {
         const data = await fetchMessages(selectedConversationId);
-        setMessages(data);
+        
+        // Only update if user is near bottom (to avoid interrupting scroll up)
+        const container = messagesContainerRef.current;
+        const isNearBottom = container 
+          ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
+          : true;
+        
+        if (isNearBottom) {
+          // Deduplicate messages by ID before updating
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newMessages = data.messages.filter(m => !existingIds.has(m.id));
+            
+            // If no new messages, don't update to avoid re-render
+            if (newMessages.length === 0 && prev.length === data.messages.length) {
+              return prev;
+            }
+            
+            // Merge and deduplicate
+            const allMessages = [...prev, ...newMessages];
+            const uniqueMessages = Array.from(
+              new Map(allMessages.map(m => [m.id, m])).values()
+            );
+            
+            // Sort by createdAt to maintain order
+            return uniqueMessages.sort((a, b) => 
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+          });
+          setHasMoreMessages(data.hasMore);
+        }
       } catch (err) {
         console.error('Failed to refresh messages:', err);
       }
@@ -101,9 +133,26 @@ export default function InboxPage() {
   }, [selectedConversationId]);
 
   // Auto-scroll to bottom when messages change
+  const prevMessagesLengthRef = useRef(0);
+  const isInitialLoadRef = useRef(false);
+  
   useEffect(() => {
     if (messages.length > 0 && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      const container = messagesContainerRef.current;
+      const isNearBottom = container 
+        ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
+        : true;
+      
+      // Only scroll if user is near bottom OR it's initial load
+      if (isNearBottom || isInitialLoadRef.current) {
+        const isNewMessage = messages.length === prevMessagesLengthRef.current + 1;
+        messagesEndRef.current.scrollIntoView({ 
+          behavior: isNewMessage && !isInitialLoadRef.current ? 'smooth' : 'auto' 
+        });
+        isInitialLoadRef.current = false;
+      }
+      
+      prevMessagesLengthRef.current = messages.length;
     }
   }, [messages]);
 
@@ -131,10 +180,14 @@ export default function InboxPage() {
 
   async function selectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
+    setMessages([]); // Clear messages immediately
     setLoadingMessages(true);
+    isInitialLoadRef.current = true; // Mark as initial load
+    
     try {
       const data = await fetchMessages(conversationId);
-      setMessages(data);
+      setMessages(data.messages);
+      setHasMoreMessages(data.hasMore);
       
       // Mark conversation as read
       await markConversationAsRead(conversationId);
@@ -152,6 +205,48 @@ export default function InboxPage() {
       setError((err as Error).message);
     } finally {
       setLoadingMessages(false);
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!selectedConversationId || loadingOlderMessages || !hasMoreMessages) return;
+
+    setLoadingOlderMessages(true);
+    try {
+      const data = await fetchMessages(selectedConversationId, 50, messages.length);
+      
+      // Filter out duplicates before prepending
+      const existingIds = new Set(messages.map(m => m.id));
+      const newMessages = data.messages.filter(m => !existingIds.has(m.id));
+      
+      // Prepend only new older messages
+      setMessages(prev => [...newMessages, ...prev]);
+      setHasMoreMessages(data.hasMore);
+      
+      // Keep scroll position (don't jump to bottom)
+      // The scroll position will naturally stay where it was
+    } catch (err) {
+      console.error('Failed to load older messages:', err);
+    } finally {
+      setLoadingOlderMessages(false);
+    }
+  }
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    const container = e.currentTarget;
+    
+    // Check if scrolled to top (with 100px threshold)
+    if (container.scrollTop < 100 && hasMoreMessages && !loadingOlderMessages) {
+      const previousScrollHeight = container.scrollHeight;
+      const previousScrollTop = container.scrollTop;
+      
+      loadOlderMessages().then(() => {
+        // Restore scroll position after loading older messages
+        requestAnimationFrame(() => {
+          const newScrollHeight = container.scrollHeight;
+          container.scrollTop = previousScrollTop + (newScrollHeight - previousScrollHeight);
+        });
+      });
     }
   }
 
@@ -534,14 +629,30 @@ export default function InboxPage() {
           </div>
         </header>
 
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4" onScroll={handleScroll}>
           {loadingMessages ? (
             <p className="text-sm text-slate-500">Loading messages…</p>
           ) : selectedConversation ? (
             <ol className="flex flex-col gap-3">
-              {messages.map((message) => (
+              {/* Loading indicator for older messages */}
+              {loadingOlderMessages && (
+                <li className="flex justify-center py-2">
+                  <span className="text-xs text-slate-500">Loading older messages...</span>
+                </li>
+              )}
+              {hasMoreMessages && !loadingOlderMessages && messages.length > 0 && (
+                <li className="flex justify-center py-2">
+                  <button
+                    onClick={loadOlderMessages}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Load older messages
+                  </button>
+                </li>
+              )}
+              {messages.map((message, index) => (
                 <li
-                  key={message.id}
+                  key={`${message.id}-${message.createdAt}-${index}`}
                   className={classNames(
                     "max-w-xl rounded-2xl px-4 py-3 shadow-sm group relative",
                     message.direction === "outgoing"
