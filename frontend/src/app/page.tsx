@@ -136,6 +136,15 @@ export default function InboxPage() {
   const prevMessagesLengthRef = useRef(0);
   const isInitialLoadRef = useRef(false);
   
+  // Scroll to bottom when loading finishes (Initial Load)
+  useEffect(() => {
+    if (!loadingMessages && messagesEndRef.current && isInitialLoadRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+      isInitialLoadRef.current = false;
+    }
+  }, [loadingMessages]);
+  
+  // Scroll on new messages
   useEffect(() => {
     if (messages.length > 0 && messagesEndRef.current) {
       const container = messagesContainerRef.current;
@@ -143,18 +152,18 @@ export default function InboxPage() {
         ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
         : true;
       
-      // Only scroll if user is near bottom OR it's initial load
-      if (isNearBottom || isInitialLoadRef.current) {
+      // Only scroll if user is near bottom AND NOT loading
+      if ((isNearBottom || isInitialLoadRef.current) && !loadingMessages) {
         const isNewMessage = messages.length === prevMessagesLengthRef.current + 1;
         messagesEndRef.current.scrollIntoView({ 
           behavior: isNewMessage && !isInitialLoadRef.current ? 'smooth' : 'auto' 
         });
-        isInitialLoadRef.current = false;
+        if (isInitialLoadRef.current) isInitialLoadRef.current = false;
       }
       
       prevMessagesLengthRef.current = messages.length;
     }
-  }, [messages]);
+  }, [messages, loadingMessages]);
 
   async function bootstrap() {
     try {
@@ -180,12 +189,11 @@ export default function InboxPage() {
 
   async function selectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
-    setMessages([]); // Clear messages immediately
     setLoadingMessages(true);
-    isInitialLoadRef.current = true; // Mark as initial load
     
     try {
       const data = await fetchMessages(conversationId);
+      isInitialLoadRef.current = true; // Mark as initial load AFTER fetch
       setMessages(data.messages);
       setHasMoreMessages(data.hasMore);
       
