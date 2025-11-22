@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { UserManagement } from '@/components/UserManagement';
 
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState('general');
   const [config, setConfig] = useState({
     apiBaseUrl: '',
     wahaBaseUrl: '',
@@ -76,6 +78,33 @@ export default function SettingsPage() {
             <p className="mt-2 text-slate-600">Configure your WhatsApp automation credentials</p>
           </div>
 
+          {/* Tabs */}
+          <div className="mb-6 border-b border-slate-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('general')}
+                className={`pb-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'general'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                General Config
+              </button>
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`pb-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'users'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                User Management
+              </button>
+            </nav>
+          </div>
+
+          {activeTab === 'general' ? (
           <div className="rounded-lg bg-white p-6 shadow-sm">
             <h2 className="mb-6 text-xl font-semibold text-slate-900">API Configuration</h2>
 
@@ -178,6 +207,9 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          ) : (
+            <UserManagement />
+          )}
         </div>
       </main>
     </div>

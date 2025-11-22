@@ -7,6 +7,7 @@ import { HealthController } from './health/health.controller';
 import { MessagesModule } from './messages/messages.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { RagModule } from './rag/rag.module';
+import { AuthModule } from './auth/auth.module';
 import { UserEntity } from './database/entities/user.entity';
 import { ConversationEntity } from './database/entities/conversation.entity';
 import { MessageEntity } from './database/entities/message.entity';
@@ -38,6 +39,7 @@ import { MessageEntity } from './database/entities/message.entity';
     MessagesModule,
     SessionsModule,
     RagModule,
+    AuthModule,
   ],
   controllers: [HealthController],
 })

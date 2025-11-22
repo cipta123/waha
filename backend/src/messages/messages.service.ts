@@ -453,6 +453,31 @@ export class MessagesService {
 
         this.logger.log(`AI auto-reply sent successfully to ${conversation.waChatId}`);
       } else if (classification.status === 'human_handoff' || classification.status === 'human_mode_active' || classification.status === 'handoff_initiated') {
+        // Send handoff message if available (suggested response from RAG)
+        if (classification.reply) {
+            this.logger.log(`Sending handoff message to ${conversation.waChatId}: ${classification.reply}`);
+            
+            try {
+                const wahaResponse: any = await this.wahaService.sendText({
+                    chatId: conversation.waChatId,
+                    text: classification.reply,
+                });
+
+                // Save the handoff message
+                const handoffMessage = this.messageRepository.create({
+                    conversation,
+                    direction: 'outgoing',
+                    text: classification.reply,
+                    waMessageId: wahaResponse?.id,
+                    ackStatus: 'pending',
+                    repliedBy: 'ai', // AI sending the transition message
+                });
+                await this.messageRepository.save(handoffMessage);
+            } catch (err) {
+                this.logger.error(`Failed to send handoff message: ${err}`);
+            }
+        }
+
         // Switch to human mode
         this.logger.log(`Switching conversation ${conversation.id} to human mode: ${classification.reason || 'human mode active'}`);
         
@@ -487,16 +512,25 @@ export class MessagesService {
       const buffer = await response.arrayBuffer();
       
       // Determine extension
-      let extension = '.bin';
+      let extension = '';
       if (originalFilename) {
           extension = path.extname(originalFilename);
       }
+
+      // If no extension from filename or it's just dot, try mimeType
       if (!extension || extension === '.') {
-          // Try to guess from mimetype
-          if (mimeType === 'image/jpeg') extension = '.jpg';
-          else if (mimeType === 'image/png') extension = '.png';
-          else if (mimeType === 'application/pdf') extension = '.pdf';
-          // Add more as needed
+          if (mimeType) {
+             if (mimeType.includes('image/jpeg') || mimeType.includes('jpg')) extension = '.jpg';
+             else if (mimeType.includes('image/png')) extension = '.png';
+             else if (mimeType.includes('image/webp')) extension = '.webp';
+             else if (mimeType.includes('image/gif')) extension = '.gif';
+             else if (mimeType.includes('video/mp4')) extension = '.mp4';
+             else if (mimeType.includes('application/pdf')) extension = '.pdf';
+             else if (mimeType.includes('audio/')) extension = '.mp3';
+          }
+          
+          // Default to .bin if still unknown
+          if (!extension) extension = '.bin';
       }
 
       const filename = `${Date.now()}_${randomBytes(8).toString('hex')}${extension}`;
