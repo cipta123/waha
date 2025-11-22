@@ -130,18 +130,29 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
             return WebhookResponse(status="handoff_initiated", reply=handoff_msg)
             
         else: # ai_reply
-            # Generate RAG Answer
-            # Get history from session if needed (simplified here)
-            session = session_manager.get_session(msg.sender_id)
-            history = session.get("history", [])[-5:] # Last 5 messages
+            # Check if classifier provided a direct suggested response (small talk)
+            suggested_response = classification.get("suggested_response")
+            reason = classification.get("reason", "").lower()
             
-            # Perform RAG Query
-            result = rag_engine.query(
-                query=msg.message,
-                history=history
-            )
+            # If it's small talk/greeting, use suggested response directly
+            # (Avoids "Information not found" for non-knowledge questions)
+            is_small_talk = any(k in reason for k in ["sapaan", "salam", "basa-basi", "umum", "greeting", "small talk"])
             
-            answer = result["answer"]
+            if suggested_response and is_small_talk:
+                logger.info(f"Using suggested response for small talk: {suggested_response}")
+                answer = suggested_response
+            else:
+                # Generate RAG Answer for knowledge questions
+                # Get history from session if needed (simplified here)
+                session = session_manager.get_session(msg.sender_id)
+                history = session.get("history", [])[-5:] # Last 5 messages
+                
+                # Perform RAG Query
+                result = rag_engine.query(
+                    query=msg.message,
+                    history=history
+                )
+                answer = result["answer"]
             
             # Update Session
             session_manager.update_activity(msg.sender_id)
