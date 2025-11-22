@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { ConversationEntity } from '../database/entities/conversation.entity';
 import { MessageEntity } from '../database/entities/message.entity';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -349,6 +352,15 @@ export class MessagesService {
         mimeType = rawMessage.media.mimetype || rawMessage.mimetype;
         fileName = rawMessage.media.filename || rawMessage.filename;
         this.logger.log(`Media URL from webhook: ${mediaUrl}`);
+
+        // Download and save media locally
+        if (mediaUrl) {
+            const localUrl = await this.downloadAndSaveMedia(mediaUrl, fileName, mimeType);
+            if (localUrl) {
+                mediaUrl = localUrl;
+                this.logger.log(`Media downloaded and saved locally at: ${localUrl}`);
+            }
+        }
       } else {
         mimeType = rawMessage.mimetype;
         fileName = rawMessage.filename;
@@ -453,6 +465,63 @@ export class MessagesService {
     } catch (error: any) {
       this.logger.error(`Error in AI classification: ${error?.message || error}`);
       throw error;
+    }
+  }
+
+  private async downloadAndSaveMedia(url: string, originalFilename?: string, mimeType?: string): Promise<string | null> {
+    try {
+      this.logger.log(`Downloading media from: ${url}`);
+      const apiKey = process.env.WAHA_API_KEY;
+      
+      const response = await fetch(url, {
+        headers: {
+          'X-Api-Key': apiKey || '',
+        },
+      });
+
+      if (!response.ok) {
+        this.logger.error(`Failed to download media: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      const buffer = await response.arrayBuffer();
+      
+      // Determine extension
+      let extension = '.bin';
+      if (originalFilename) {
+          extension = path.extname(originalFilename);
+      }
+      if (!extension || extension === '.') {
+          // Try to guess from mimetype
+          if (mimeType === 'image/jpeg') extension = '.jpg';
+          else if (mimeType === 'image/png') extension = '.png';
+          else if (mimeType === 'application/pdf') extension = '.pdf';
+          // Add more as needed
+      }
+
+      const filename = `${Date.now()}_${randomBytes(8).toString('hex')}${extension}`;
+      
+      // Target directory: ../../uploads (relative to dist/messages/ or src/messages/)
+      // Adjusting to point to root/uploads
+      const uploadDir = path.join(__dirname, '..', '..', 'uploads'); 
+      
+      // Ensure directory exists
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, Buffer.from(buffer));
+      
+      this.logger.log(`Media saved to disk: ${filePath}`);
+      
+      // Return relative URL for frontend (served by ServeStaticModule)
+      // Note: The ServeStaticModule serves from root '/uploads'
+      // So if backend URL is http://localhost:4000, the file is at http://localhost:4000/uploads/filename
+      return `http://localhost:4000/uploads/${filename}`;
+    } catch (error) {
+      this.logger.error(`Error downloading media: ${error}`);
+      return null;
     }
   }
 
