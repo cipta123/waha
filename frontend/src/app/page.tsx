@@ -22,6 +22,7 @@ import { MessageList } from "@/components/MessageList";
 import { classNames, formatTime } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
+
 export default function InboxPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -44,11 +45,10 @@ export default function InboxPage() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showNewMessageModal, setShowNewMessageModal] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInboxSidebarOpen, setIsInboxSidebarOpen] = useState(true);
   const [newMessagePhone, setNewMessagePhone] = useState("");
   const [newMessageText, setNewMessageText] = useState("");
-  
+
   // Ref for auto-scroll to bottom
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -87,9 +87,9 @@ export default function InboxPage() {
       setIsAuthenticated(true);
       if (userStr) {
         try {
-            setCurrentUser(JSON.parse(userStr));
+          setCurrentUser(JSON.parse(userStr));
         } catch (e) {
-            console.error('Failed to parse user', e);
+          console.error('Failed to parse user', e);
         }
       }
     }
@@ -122,32 +122,32 @@ export default function InboxPage() {
     const interval = setInterval(async () => {
       try {
         const data = await fetchMessages(selectedConversationId);
-        
+
         // Only update if user is near bottom (to avoid interrupting scroll up)
         const container = messagesContainerRef.current;
-        const isNearBottom = container 
+        const isNearBottom = container
           ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
           : true;
-        
+
         if (isNearBottom) {
           // Deduplicate messages by ID before updating
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
             const newMessages = data.messages.filter(m => !existingIds.has(m.id));
-            
+
             // If no new messages, don't update to avoid re-render
             if (newMessages.length === 0 && prev.length === data.messages.length) {
               return prev;
             }
-            
+
             // Merge and deduplicate
             const allMessages = [...prev, ...newMessages];
             const uniqueMessages = Array.from(
               new Map(allMessages.map(m => [m.id, m])).values()
             );
-            
+
             // Sort by createdAt to maintain order
-            return uniqueMessages.sort((a, b) => 
+            return uniqueMessages.sort((a, b) =>
               new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
             );
           });
@@ -164,7 +164,7 @@ export default function InboxPage() {
   // Auto-scroll to bottom when messages change
   const prevMessagesLengthRef = useRef(0);
   const isInitialLoadRef = useRef(false);
-  
+
   // Scroll to bottom when loading finishes (Initial Load)
   useEffect(() => {
     if (!loadingMessages && messagesEndRef.current && isInitialLoadRef.current) {
@@ -172,24 +172,24 @@ export default function InboxPage() {
       isInitialLoadRef.current = false;
     }
   }, [loadingMessages]);
-  
+
   // Scroll on new messages
   useEffect(() => {
     if (messages.length > 0 && messagesEndRef.current) {
       const container = messagesContainerRef.current;
-      const isNearBottom = container 
+      const isNearBottom = container
         ? container.scrollHeight - container.scrollTop - container.clientHeight < 200
         : true;
-      
+
       // Only scroll if user is near bottom AND NOT loading
       if ((isNearBottom || isInitialLoadRef.current) && !loadingMessages) {
         const isNewMessage = messages.length === prevMessagesLengthRef.current + 1;
-        messagesEndRef.current.scrollIntoView({ 
-          behavior: isNewMessage && !isInitialLoadRef.current ? 'smooth' : 'auto' 
+        messagesEndRef.current.scrollIntoView({
+          behavior: isNewMessage && !isInitialLoadRef.current ? 'smooth' : 'auto'
         });
         if (isInitialLoadRef.current) isInitialLoadRef.current = false;
       }
-      
+
       prevMessagesLengthRef.current = messages.length;
     }
   }, [messages, loadingMessages]);
@@ -219,20 +219,20 @@ export default function InboxPage() {
   async function selectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
     setLoadingMessages(true);
-    
+
     try {
       const data = await fetchMessages(conversationId);
       isInitialLoadRef.current = true; // Mark as initial load AFTER fetch
       setMessages(data.messages);
       setHasMoreMessages(data.hasMore);
-      
+
       // Mark conversation as read
       await markConversationAsRead(conversationId);
-      
+
       // Update local state to reflect read status
-      setConversations(prev => 
-        prev.map(conv => 
-          conv.id === conversationId 
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === conversationId
             ? { ...conv, unreadCount: 0 }
             : conv
         )
@@ -251,15 +251,15 @@ export default function InboxPage() {
     setLoadingOlderMessages(true);
     try {
       const data = await fetchMessages(selectedConversationId, 50, messages.length);
-      
+
       // Filter out duplicates before prepending
       const existingIds = new Set(messages.map(m => m.id));
       const newMessages = data.messages.filter(m => !existingIds.has(m.id));
-      
+
       // Prepend only new older messages
       setMessages(prev => [...newMessages, ...prev]);
       setHasMoreMessages(data.hasMore);
-      
+
       // Keep scroll position (don't jump to bottom)
       // The scroll position will naturally stay where it was
     } catch (err) {
@@ -271,12 +271,12 @@ export default function InboxPage() {
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const container = e.currentTarget;
-    
+
     // Check if scrolled to top (with 100px threshold)
     if (container.scrollTop < 100 && hasMoreMessages && !loadingOlderMessages) {
       const previousScrollHeight = container.scrollHeight;
       const previousScrollTop = container.scrollTop;
-      
+
       loadOlderMessages().then(() => {
         // Restore scroll position after loading older messages
         requestAnimationFrame(() => {
@@ -433,12 +433,12 @@ export default function InboxPage() {
 
     try {
       await toggleAiMode(selectedConversation.id, mode);
-      
+
       // Update local state
-      setConversations(prev => prev.map(c => 
+      setConversations(prev => prev.map(c =>
         c.id === selectedConversation.id ? { ...c, mode } : c
       ));
-      
+
       // Update selected conversation
       const updated = { ...selectedConversation, mode };
       setConversations(prev => prev.map(c => c.id === updated.id ? updated : c));
@@ -453,13 +453,13 @@ export default function InboxPage() {
   }
 
   return (
-    <>
-    <div className="flex flex-1 flex-col min-w-0 bg-white h-full">
-        
-        {/* GLOBAL HEADER */}
-        <header className="h-16 border-b border-slate-200 px-6 flex items-center justify-between shrink-0 bg-white">
+    <main className="flex h-screen bg-slate-100 overflow-hidden">
+      <div className="flex flex-1 flex-col min-w-0 bg-white h-full">
+
+        {/* GLOBAL HEADER - Hide on mobile when conversation is selected */}
+        <header className={`h-16 border-b border-slate-200 px-6 flex items-center justify-between shrink-0 bg-white ${selectedConversationId ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => setIsInboxSidebarOpen(!isInboxSidebarOpen)}
               className="p-2 -ml-2 rounded-md hover:bg-slate-100 text-slate-500 transition-colors"
               title="Toggle Sidebar"
@@ -468,7 +468,7 @@ export default function InboxPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
               </svg>
             </button>
-            
+
             <div className="flex flex-col justify-center">
               <h1 className="text-lg font-bold text-slate-900">Inbox</h1>
               <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -479,16 +479,16 @@ export default function InboxPage() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-               <input 
-                  type="text" 
-                  placeholder="Cari (Ctrl K)" 
-                  className="h-9 w-64 rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-sm pl-9 focus:border-blue-500 focus:outline-none"
-               />
-               <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-               </svg>
+              <input
+                type="text"
+                placeholder="Cari (Ctrl K)"
+                className="h-9 w-64 rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-sm pl-9 focus:border-blue-500 focus:outline-none"
+              />
+              <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </div>
-            
+
             <button className="rounded-full p-2 text-slate-400 hover:bg-slate-100">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -496,267 +496,288 @@ export default function InboxPage() {
             </button>
 
             <div className="flex items-center gap-2">
-               <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-semibold text-xs">
-                  {currentUser?.fullName 
-                    ? currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() 
-                    : 'U'}
-               </div>
-               <span className="text-sm font-medium text-slate-700">
-                 {currentUser?.fullName || 'User'}
-               </span>
+              <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-semibold text-xs">
+                {currentUser?.fullName
+                  ? currentUser.fullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                  : 'U'}
+              </div>
+              <span className="text-sm font-medium text-slate-700">
+                {currentUser?.fullName || 'User'}
+              </span>
             </div>
           </div>
         </header>
 
         {/* CONTENT BODY */}
         <div className="flex flex-1 overflow-hidden">
-          
+
           {/* INBOX SIDEBAR FILTER */}
-          <div 
-            className={`border-r border-slate-200 bg-white flex flex-col transition-all duration-300 ease-in-out overflow-hidden hidden md:flex ${
-              isInboxSidebarOpen ? 'w-60 opacity-100' : 'w-0 opacity-0 border-none'
-            }`}
+          <div
+            className={`border-r border-slate-200 bg-white flex flex-col transition-all duration-300 ease-in-out overflow-hidden hidden md:flex ${isInboxSidebarOpen ? 'w-60 opacity-100' : 'w-0 opacity-0 border-none'
+              }`}
           >
-             <div className="w-60 min-w-[15rem]">
-             
-             {/* Section 1 */}
-             <div className="p-4">
+            <div className="w-60 min-w-[15rem]">
+
+              {/* Section 1 */}
+              <div className="p-4">
                 <div className="flex items-center justify-between mb-2">
-                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Saya</span>
-                   <button className="text-slate-400 hover:text-slate-600">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                      </svg>
-                   </button>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Saya</span>
+                  <button className="text-slate-400 hover:text-slate-600">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
                 </div>
                 <ul className="space-y-1">
-                   <li>
-                      <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 rounded-md">
-                         <span>Ditugaskan ke saya</span>
-                         <span className="text-xs font-bold">1</span>
-                      </button>
-                   </li>
-                   <li>
-                      <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                         <span>Kolaborasi</span>
-                      </button>
-                   </li>
-                   <li>
-                      <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                         <span>Mention</span>
-                      </button>
-                   </li>
+                  <li>
+                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 rounded-md">
+                      <span>Ditugaskan ke saya</span>
+                      <span className="text-xs font-bold">1</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
+                      <span>Kolaborasi</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
+                      <span>Mention</span>
+                    </button>
+                  </li>
                 </ul>
-             </div>
-
-             {/* Section 2 */}
-             <div className="p-4 pt-0">
-                <div className="flex items-center justify-between mb-2">
-                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Perusahaan</span>
-                   <button className="text-slate-400 hover:text-slate-600">
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                      </svg>
-                   </button>
-                </div>
-                <ul className="space-y-1">
-                   <li>
-                      <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                         <span>Semua</span>
-                      </button>
-                   </li>
-                </ul>
-             </div>
-
-             </div>
-          </div>
-
-      {/* Conversation list */}
-      <section className="flex w-80 flex-col border-r border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase text-slate-500">Assigned</p>
-            <h2 className="text-lg font-semibold">Inbox</h2>
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
-              onClick={() => bootstrap()}
-              disabled={loadingConversations}
-            >
-              Refresh
-            </button>
-            <button
-              className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
-              onClick={() => setShowNewMessageModal(true)}
-            >
-              + New
-            </button>
-          </div>
-        </div>
-        <div className="px-4 py-2">
-          <input
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            placeholder="Search conversations"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-          />
-        </div>
-        <ConversationList 
-          conversations={filteredConversations}
-          selectedConversationId={selectedConversationId}
-          onSelectConversation={selectConversation}
-          loading={loadingConversations}
-          searchTerm={searchTerm}
-        />
-      </section>
-
-      {/* Chat area */}
-      <section className="flex min-w-0 flex-1 flex-col bg-[#efeae2] relative isolate">
-        {/* Background Pattern/Logo */}
-        <div 
-          className="absolute inset-0 opacity-20 pointer-events-none -z-10"
-          style={{
-            backgroundImage: "url('https://upload.wikimedia.org/wikipedia/id/c/c3/Logo_Universitas_Terbuka.svg')",
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '50%'
-          }}
-        />
-
-        <ChatHeader 
-          selectedConversation={selectedConversation}
-          sessions={sessions}
-          onToggleAiMode={handleToggleAiMode}
-        />
-
-        <div className="flex-1 flex flex-col min-h-0 relative z-10">
-          <MessageList 
-            messages={messages}
-            loadingMessages={loadingMessages}
-            loadingOlderMessages={loadingOlderMessages}
-            selectedConversation={selectedConversation}
-            onScroll={handleScroll}
-            messagesContainerRef={messagesContainerRef}
-            messagesEndRef={messagesEndRef}
-            openMenuId={openMenuId}
-            setOpenMenuId={setOpenMenuId}
-            onReply={setReplyingTo}
-            onImageClick={(url) => setSelectedImage(url)}
-          />
-        </div>
-
-        <footer className="border-t border-slate-200 bg-white px-6 py-4 relative z-10">
-          {error && (
-            <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-              {error}
-            </div>
-          )}
-          {replyingTo && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border-l-4 border-blue-500 bg-blue-50 px-3 py-2">
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-blue-900">
-                  Replying to {replyingTo.senderName || (replyingTo.direction === 'outgoing' ? 'You' : 'Contact')}
-                </p>
-                <p className="text-xs text-blue-700 truncate">{replyingTo.text}</p>
               </div>
-              <button
-                onClick={() => setReplyingTo(null)}
-                className="text-blue-900 hover:text-blue-700 font-bold"
-                title="Cancel reply"
-              >
-                ×
-              </button>
-            </div>
-          )}
-          {selectedImage && (
-            <div className="mb-3 relative inline-block">
-              <img src={selectedImage} alt="Preview" className="max-h-32 rounded-lg" />
-              <button
-                onClick={() => setSelectedImage(null)}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
-              >
-                ×
-              </button>
-            </div>
-          )}
-          <div className="flex items-end gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!selectedConversation || sending}
-              className="h-11 rounded-xl border border-slate-300 px-4 text-sm hover:bg-slate-50 disabled:opacity-50"
-              title="Attach image"
-            >
-              📎
-            </button>
-            <textarea
-              className="h-20 flex-1 resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
-              placeholder={selectedConversation ? (selectedImage ? "Add caption (optional)" : "Type your reply") : "Select a conversation"}
-              value={composerText}
-              onChange={(event) => setComposerText(event.target.value)}
-              disabled={!selectedConversation || sending}
-            />
-            <button
-              className="h-11 rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white disabled:opacity-50"
-              onClick={() => void handleSend()}
-              disabled={!selectedConversation || sending || (!composerText.trim() && !selectedImage)}
-            >
-              {sending ? "Sending…" : "Send"}
-            </button>
-          </div>
-        </footer>
-      </section>
 
-      {/* Context panel */}
-      <aside className="hidden w-72 flex-col border-l border-slate-200 bg-white px-5 py-4 lg:flex">
-        <div className="border-b border-slate-100 pb-4">
-          <p className="text-xs uppercase text-slate-500">Contact Info</p>
-          <h3 className="text-lg font-semibold">
-            {selectedConversation ? selectedConversation.title ?? selectedConversation.waChatId : "Select contact"}
-          </h3>
-          <p className="text-xs text-slate-500">{selectedConversation?.waChatId ?? "wa chat id"}</p>
-        </div>
-        <div className="mt-4 space-y-4">
-          <section>
-            <p className="text-xs uppercase text-slate-500">Status</p>
-            <div className="rounded-lg border border-slate-200 p-3 text-sm">
-              {selectedConversation ? selectedConversation.status : "-"}
+              {/* Section 2 */}
+              <div className="p-4 pt-0">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Perusahaan</span>
+                  <button className="text-slate-400 hover:text-slate-600">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+                <ul className="space-y-1">
+                  <li>
+                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
+                      <span>Semua</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
             </div>
+          </div>
+
+          {/* Conversation list */}
+          <section className={`flex flex-col border-r border-slate-200 bg-white ${selectedConversationId ? 'hidden md:flex w-80' : 'w-full md:w-80'}`}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-slate-500">Assigned</p>
+                <h2 className="text-lg font-semibold">Inbox</h2>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
+                  onClick={() => bootstrap()}
+                  disabled={loadingConversations}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+                  onClick={() => setShowNewMessageModal(true)}
+                >
+                  + New
+                </button>
+              </div>
+            </div>
+            <div className="px-4 py-2">
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                placeholder="Search conversations"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </div>
+            <ConversationList
+              conversations={filteredConversations}
+              selectedConversationId={selectedConversationId}
+              onSelectConversation={selectConversation}
+              loading={loadingConversations}
+              searchTerm={searchTerm}
+            />
           </section>
-          <section>
-            <p className="text-xs uppercase text-slate-500">Sessions</p>
-            <div className="space-y-2 text-sm">
-              {sessions.length === 0 ? (
-                <p className="text-slate-500">No active sessions.</p>
-              ) : (
-                sessions.map((session, index) => (
-                  <div
-                    key={session.id ?? session.session ?? `session-${index}`}
-                    className="rounded-lg border border-slate-200 p-2"
-                  >
-                    <p className="font-medium">{session.session ?? session.id}</p>
-                    <p className="text-xs text-slate-500">{session.engine}</p>
-                    <p className="text-xs">Status: {session.status}</p>
+
+          {/* Chat area */}
+          <section className={`flex-col bg-[#efeae2] relative isolate overflow-hidden pb-16 md:pb-0 ${selectedConversationId ? 'flex flex-1 min-w-0' : 'hidden md:flex md:flex-1 md:min-w-0'}`}>
+            {/* Background Pattern/Logo */}
+            <div
+              className="absolute inset-0 opacity-20 pointer-events-none -z-10"
+              style={{
+                backgroundImage: "url('https://upload.wikimedia.org/wikipedia/id/c/c3/Logo_Universitas_Terbuka.svg')",
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '50%'
+              }}
+            />
+
+            <ChatHeader
+              selectedConversation={selectedConversation}
+              sessions={sessions}
+              onToggleAiMode={handleToggleAiMode}
+              onBack={() => setSelectedConversationId(null)}
+            />
+
+            <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden">
+              <MessageList
+                messages={messages}
+                loadingMessages={loadingMessages}
+                loadingOlderMessages={loadingOlderMessages}
+                selectedConversation={selectedConversation}
+                onScroll={handleScroll}
+                messagesContainerRef={messagesContainerRef}
+                messagesEndRef={messagesEndRef}
+                openMenuId={openMenuId}
+                setOpenMenuId={setOpenMenuId}
+                onReply={setReplyingTo}
+                onImageClick={(url) => setSelectedImage(url)}
+              />
+            </div>
+
+            <footer className="border-t border-slate-200 bg-white p-2 md:px-6 md:py-4 relative z-20 shrink-0">
+              <div className="flex flex-col gap-2 w-full">
+                {/* Error Message */}
+                {error && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {error}
                   </div>
-                ))
-              )}
-            </div>
+                )}
+
+                {/* Reply Preview */}
+                {replyingTo && (
+                  <div className="flex items-start gap-2 rounded-lg border-l-4 border-blue-500 bg-blue-50 px-3 py-2 animate-in slide-in-from-bottom-2 fade-in">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-blue-900">
+                        Replying to {replyingTo.senderName || (replyingTo.direction === 'outgoing' ? 'You' : 'Contact')}
+                      </p>
+                      <p className="text-xs text-blue-700 truncate">{replyingTo.text}</p>
+                    </div>
+                    <button
+                      onClick={() => setReplyingTo(null)}
+                      className="text-blue-900 hover:text-blue-700 font-bold p-1"
+                      title="Cancel reply"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                {/* Image Preview */}
+                {selectedImage && (
+                  <div className="relative inline-block self-start">
+                    <img src={selectedImage} alt="Preview" className="max-h-24 rounded-lg border border-slate-200" />
+                    <button
+                      onClick={() => setSelectedImage(null)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 shadow-sm"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                {/* Input Area */}
+                <div className="flex items-end gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!selectedConversation || sending}
+                    className="h-10 md:h-11 w-10 md:w-auto rounded-xl border border-slate-300 md:px-4 flex items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50 shrink-0 transition-colors"
+                    title="Attach image"
+                  >
+                    <span className="md:hidden text-lg">📎</span>
+                    <span className="hidden md:inline text-lg">📎</span>
+                  </button>
+                  <textarea
+                    className="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[40px] max-h-[120px] disabled:bg-slate-50 transition-all"
+                    placeholder={selectedConversation ? (selectedImage ? "Add caption..." : "Type a message") : ""}
+                    value={composerText}
+                    onChange={(event) => setComposerText(event.target.value)}
+                    disabled={!selectedConversation || sending}
+                    rows={1}
+                    style={{ height: '40px' }} // Initial height
+                    onInput={(e) => {
+                      // Auto-grow textarea
+                      e.currentTarget.style.height = 'auto';
+                      e.currentTarget.style.height = Math.min(e.currentTarget.scrollHeight, 120) + 'px';
+                    }}
+                  />
+                  <button
+                    className="h-10 md:h-11 rounded-xl bg-blue-600 px-4 md:px-6 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shrink-0 flex items-center justify-center transition-colors shadow-sm"
+                    onClick={() => void handleSend()}
+                    disabled={!selectedConversation || sending || (!composerText.trim() && !selectedImage)}
+                  >
+                    {sending ? (
+                      <span className="animate-pulse">...</span>
+                    ) : (
+                      <span>Send</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </footer>
           </section>
+
+          {/* Context panel */}
+          <aside className="hidden w-72 flex-col border-l border-slate-200 bg-white px-5 py-4 lg:flex">
+            <div className="border-b border-slate-100 pb-4">
+              <p className="text-xs uppercase text-slate-500">Contact Info</p>
+              <h3 className="text-lg font-semibold">
+                {selectedConversation ? selectedConversation.title ?? selectedConversation.waChatId : "Select contact"}
+              </h3>
+              <p className="text-xs text-slate-500">{selectedConversation?.waChatId ?? "wa chat id"}</p>
+            </div>
+            <div className="mt-4 space-y-4">
+              <section>
+                <p className="text-xs uppercase text-slate-500">Status</p>
+                <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                  {selectedConversation ? selectedConversation.status : "-"}
+                </div>
+              </section>
+              <section>
+                <p className="text-xs uppercase text-slate-500">Sessions</p>
+                <div className="space-y-2 text-sm">
+                  {sessions.length === 0 ? (
+                    <p className="text-slate-500">No active sessions.</p>
+                  ) : (
+                    sessions.map((session, index) => (
+                      <div
+                        key={session.id ?? session.session ?? `session-${index}`}
+                        className="rounded-lg border border-slate-200 p-2"
+                      >
+                        <p className="font-medium">{session.session ?? session.id}</p>
+                        <p className="text-xs text-slate-500">{session.engine}</p>
+                        <p className="text-xs">Status: {session.status}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </aside>
         </div>
-      </aside>
       </div>
-    </div>
 
       {/* Image Lightbox Modal */}
       {selectedImage && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 p-4"
           onClick={() => setSelectedImage(null)}
         >
@@ -766,9 +787,9 @@ export default function InboxPage() {
           >
             ×
           </button>
-          <img 
-            src={selectedImage} 
-            alt="Full size" 
+          <img
+            src={selectedImage}
+            alt="Full size"
             className="max-w-full max-h-full object-contain"
             onClick={(e) => e.stopPropagation()}
           />
@@ -777,11 +798,11 @@ export default function InboxPage() {
 
       {/* New Message Modal */}
       {showNewMessageModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
           onClick={() => setShowNewMessageModal(false)}
         >
-          <div 
+          <div
             className="bg-white rounded-lg shadow-xl w-full max-w-md p-6"
             onClick={(e) => e.stopPropagation()}
           >
@@ -852,6 +873,6 @@ export default function InboxPage() {
           </div>
         </div>
       )}
-    </>
+    </main >
   );
 }

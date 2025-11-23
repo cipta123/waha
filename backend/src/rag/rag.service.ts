@@ -29,7 +29,7 @@ export class RagService {
   async classifyMessage(request: ClassifyMessageRequest): Promise<ClassifyMessageResponse> {
     try {
       this.logger.log(`Classifying message from ${request.sender_id}: "${request.message}"`);
-      
+
       const response = await firstValueFrom(
         this.httpService.post<ClassifyMessageResponse>(
           `${this.ragServiceUrl}/webhook/whatsapp`,
@@ -44,11 +44,11 @@ export class RagService {
       );
 
       this.logger.log(`Classification result: ${response.data.status}`);
-      
+
       return response.data;
     } catch (error: any) {
       this.logger.error(`Failed to classify message: ${error?.message || error}`);
-      
+
       // Fallback to human handoff if RAG service is unavailable
       return {
         status: 'human_handoff',
@@ -70,4 +70,6 @@ export class RagService {
       return false;
     }
   }
+
+
 }

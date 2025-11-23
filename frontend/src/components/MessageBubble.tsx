@@ -9,6 +9,20 @@ interface MessageBubbleProps {
   onImageClick: (url: string) => void;
 }
 
+// Helper to get dynamic API URL for media
+const fixLocalhostUrl = (url: string) => {
+  if (typeof window === 'undefined' || !url) return url;
+  // Replace localhost or 127.0.0.1 with current window hostname
+  return url.replace(/:\/\/(localhost|127\.0\.0\.1)/, `://${window.location.hostname}`);
+};
+
+const getMediaUrl = (id: string) => {
+  if (typeof window !== 'undefined') {
+    return `http://${window.location.hostname}:4000/api/messages/media/${id}`;
+  }
+  return `http://localhost:4000/api/messages/media/${id}`;
+};
+
 export function MessageBubble({
   message,
   openMenuId,
@@ -34,7 +48,7 @@ export function MessageBubble({
   return (
     <li
       className={classNames(
-        "relative flex w-fit max-w-[60%] flex-col gap-1 rounded-2xl px-4 py-3 shadow-sm transition-all hover:shadow-md",
+        "relative flex w-fit max-w-[85%] md:max-w-[60%] flex-col gap-1 rounded-2xl px-3 py-2 md:px-4 md:py-3 shadow-sm transition-all hover:shadow-md",
         message.direction === "outgoing" ? "self-end rounded-br-sm" : "self-start rounded-bl-sm",
         bubbleColor,
         isOptimistic ? "opacity-70" : "opacity-100"
@@ -103,15 +117,15 @@ export function MessageBubble({
           <img 
             src={
               message.mediaUrl.startsWith('http') || message.mediaUrl.startsWith('data:') 
-                ? message.mediaUrl 
-                : `http://localhost:4000/api/messages/media/${message.id}`
+                ? fixLocalhostUrl(message.mediaUrl)
+                : getMediaUrl(message.id)
             }
             alt="Image" 
-            className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            className="max-w-full md:max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => {
-              const url = message.mediaUrl.startsWith('http') || message.mediaUrl.startsWith('data:') 
-                ? message.mediaUrl 
-                : `http://localhost:4000/api/messages/media/${message.id}`;
+              const url = message.mediaUrl && (message.mediaUrl.startsWith('http') || message.mediaUrl.startsWith('data:'))
+                ? fixLocalhostUrl(message.mediaUrl)
+                : getMediaUrl(message.id);
               if (url) onImageClick(url);
             }}
           />

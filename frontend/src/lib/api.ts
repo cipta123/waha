@@ -1,5 +1,23 @@
-const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
-const RAG_API_BASE_URL = 'http://localhost:8001';
+// Dynamically determine API base URL
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Client-side: use current hostname
+    return `http://${window.location.hostname}:4000/api`;
+  }
+  // Server-side or fallback
+  return process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api';
+};
+
+const getRagBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    // Client-side: use current hostname
+    return `http://${window.location.hostname}:8001`;
+  }
+  return 'http://localhost:8001';
+};
+
+const BASE_URL = getBaseUrl().replace(/\/$/, '');
+const RAG_API_BASE_URL = getRagBaseUrl().replace(/\/$/, '');
 
 interface ApiFetchOptions extends RequestInit {
   raw?: boolean;
@@ -31,19 +49,19 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
 
 // Helper for RAG Service API
 async function ragApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const url = `${RAG_API_BASE_URL}${path}`;
-    const init: RequestInit = {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(options.headers || {}),
-        }
-    };
-    const response = await fetch(url, init);
-    if (!response.ok) {
-        throw new Error(`RAG Service request failed: ${response.status}`);
+  const url = `${RAG_API_BASE_URL}${path}`;
+  const init: RequestInit = {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
     }
-    return response.json();
+  };
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`RAG Service request failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export interface HealthResponse {
@@ -145,19 +163,19 @@ export const logMessageToRag = (senderId: string, message: string, role: 'user' 
   } as any);
 
 export const fetchMessageReports = (params: {
-    start_date?: string;
-    end_date?: string;
-    agent_id?: string;
-    intent?: string;
-    search?: string;
-    limit?: number;
-    offset?: number;
+  start_date?: string;
+  end_date?: string;
+  agent_id?: string;
+  intent?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
 }) => {
-    const query = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-            query.append(key, String(value));
-        }
-    });
-    return ragApiFetch<any>(`/reports/messages?${query.toString()}`);
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value));
+    }
+  });
+  return ragApiFetch<any>(`/reports/messages?${query.toString()}`);
 };

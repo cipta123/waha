@@ -24,6 +24,7 @@ from models import (
     WhatsAppMessage,
     WebhookResponse,
     LogMessage,
+    LogMessage,
     ReportResponse
 )
 from rag_engine import RAGEngine
@@ -78,7 +79,8 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # allow_origins=["*"],  <-- Cannot use '*' with allow_credentials=True
+    allow_origin_regex="https?://.*",  # Allow any HTTP/HTTPS origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -727,6 +729,9 @@ async def delete_qa_pair(qa_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete Q&A pair: {str(e)}"
         )
+
+
+
 
 
 if __name__ == "__main__":

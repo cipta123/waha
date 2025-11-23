@@ -16,7 +16,8 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch('http://localhost:4000/api/auth/login', {
+      const hostname = window.location.hostname;
+      const res = await fetch(`http://${hostname}:4000/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -41,7 +42,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#efeae2] relative isolate">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#efeae2] relative isolate">
        {/* Background Logo */}
        <div 
           className="absolute inset-0 opacity-20 pointer-events-none -z-10"
