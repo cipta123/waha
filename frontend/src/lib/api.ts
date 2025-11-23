@@ -1,4 +1,5 @@
 const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
+const RAG_API_BASE_URL = 'http://localhost:8001';
 
 interface ApiFetchOptions extends RequestInit {
   raw?: boolean;
@@ -26,6 +27,23 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
   }
 
   return response.json() as Promise<T>;
+}
+
+// Helper for RAG Service API
+async function ragApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const url = `${RAG_API_BASE_URL}${path}`;
+    const init: RequestInit = {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+        }
+    };
+    const response = await fetch(url, init);
+    if (!response.ok) {
+        throw new Error(`RAG Service request failed: ${response.status}`);
+    }
+    return response.json();
 }
 
 export interface HealthResponse {
@@ -112,3 +130,34 @@ export const toggleAiMode = (conversationId: string, mode: 'ai' | 'human', reaso
     method: 'POST',
     body: JSON.stringify({ mode, reason }),
   });
+
+export const fetchRagAnalytics = (days: number = 7) => ragApiFetch<any>(`/analytics?days=${days}`);
+
+export const logMessageToRag = (senderId: string, message: string, role: 'user' | 'assistant', agentId?: string) =>
+  ragApiFetch<{ status: string }>(`/log-message`, {
+    method: 'POST',
+    body: JSON.stringify({
+      sender_id: senderId,
+      message,
+      role,
+      agent_id: agentId
+    })
+  } as any);
+
+export const fetchMessageReports = (params: {
+    start_date?: string;
+    end_date?: string;
+    agent_id?: string;
+    intent?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+            query.append(key, String(value));
+        }
+    });
+    return ragApiFetch<any>(`/reports/messages?${query.toString()}`);
+};

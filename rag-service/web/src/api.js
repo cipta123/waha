@@ -59,4 +59,6 @@ export const listQAPairs = () => api.get('/qa');
 
 export const deleteQAPair = (qaId) => api.delete(`/qa/${qaId}`);
 
+export const getAnalytics = (days = 7) => api.get(`/analytics?days=${days}`);
+
 export default api;

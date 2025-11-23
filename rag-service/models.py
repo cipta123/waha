@@ -146,7 +146,24 @@ class WhatsAppMessage(BaseModel):
     message: str = Field(..., description="The text content of the message")
 
 
+class LogMessage(BaseModel):
+    """Input model for logging a message manually"""
+    sender_id: str = Field(..., description="The user ID (chat partner)")
+    message: str = Field(..., description="The message content")
+    role: str = Field(..., description="user or assistant")
+    agent_id: Optional[str] = Field(None, description="ID of the human agent if applicable")
+    timestamp: Optional[float] = Field(None, description="Unix timestamp")
+
+
 class WebhookResponse(BaseModel):
     """Response for webhook processing"""
     status: str = Field(..., description="Status of the processing (e.g., 'ai_replied', 'human_handoff', 'ignored')")
     reply: Optional[str] = Field(None, description="The reply message sent to the user, if any")
+
+
+class ReportResponse(BaseModel):
+    """Response for message reports"""
+    messages: List[dict]
+    total: int
+    limit: int
+    offset: int

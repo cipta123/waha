@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     
+    # Database Configuration (MySQL)
+    mysql_host: str = "localhost"
+    mysql_port: int = 3306
+    mysql_user: str = "root"
+    mysql_password: str = ""
+    mysql_db: str = "waha_rag_service"
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

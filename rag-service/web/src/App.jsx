@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Database, MessageSquare, Upload, BarChart3, FolderOpen, MessageCircle } from 'lucide-react'
+import { Database, MessageSquare, Upload, BarChart3, FolderOpen, MessageCircle, PieChart } from 'lucide-react'
 import Dashboard from './components/Dashboard'
 import DocumentUploadEnhanced from './components/DocumentUploadEnhanced'
 import DocumentManager from './components/DocumentManager'
 import QAManager from './components/QAManager'
-import ChatInterface from './components/ChatInterface'
+import ChatInterface from './components/ChatInterfaceEnhanced'
+import AnalyticsDashboard from './components/AnalyticsDashboard'
 import { healthCheck } from './api'
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
 
   const tabs = [
     { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
+    { id: 'analytics', name: 'Analytics', icon: PieChart },
     { id: 'upload', name: 'Upload Documents', icon: Upload },
     { id: 'manage', name: 'Manage Documents', icon: FolderOpen },
     { id: 'qa', name: 'Q&A Knowledge', icon: MessageCircle },
@@ -88,6 +90,7 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'dashboard' && <Dashboard health={health} />}
+        {activeTab === 'analytics' && <AnalyticsDashboard />}
         {activeTab === 'upload' && <DocumentUploadEnhanced />}
         {activeTab === 'manage' && <DocumentManager />}
         {activeTab === 'qa' && <QAManager />}

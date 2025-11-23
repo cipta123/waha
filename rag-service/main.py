@@ -1,8 +1,9 @@
+import time
 from fastapi import FastAPI, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from models import (
     DocumentInput,
     DocumentBatch,
@@ -21,7 +22,9 @@ from models import (
     QAListResponse,
     QAResponse,
     WhatsAppMessage,
-    WebhookResponse
+    WebhookResponse,
+    LogMessage,
+    ReportResponse
 )
 from rag_engine import RAGEngine
 from document_parser import DocumentParser
@@ -100,6 +103,7 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
     - **sender_id**: Phone number or ID of the sender
     - **message**: Content of the message
     """
+    start_time = time.time()
     try:
         logger.info(f"Received WhatsApp message from {msg.sender_id}: {msg.message[:50]}...")
         
@@ -112,6 +116,8 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
         # 1. Check Session Status
         if not session_manager.should_ai_reply(msg.sender_id):
             logger.info(f"User {msg.sender_id} is in human mode. Ignoring.")
+            # Log message but mark as ignored/human mode
+            session_manager.add_history(msg.sender_id, "user", msg.message)
             return WebhookResponse(status="human_mode_active", reply=None)
             
         # 2. Classify Intent
@@ -119,14 +125,22 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
         logger.info(f"Classification for {msg.sender_id}: {classification}")
         
         action = classification.get("action")
+        intent = classification.get("reason", "unknown") # Use reason as intent label for now
         
         # 3. Handle Based on Intent
         if action == "human_handoff":
             # Switch to Human Mode
             session_manager.set_human_mode(msg.sender_id)
             
+            # Log user message with intent
+            session_manager.add_history(msg.sender_id, "user", msg.message, intent=intent)
+            
             # Optional: Send a handoff message
             handoff_msg = classification.get("suggested_response", "Baik, saya akan hubungkan dengan staf kami. Mohon tunggu sebentar.")
+            
+            # Log system reply
+            session_manager.add_history(msg.sender_id, "assistant", handoff_msg, intent="handoff")
+            
             return WebhookResponse(status="handoff_initiated", reply=handoff_msg)
             
         else: # ai_reply
@@ -135,12 +149,12 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
             reason = classification.get("reason", "").lower()
             
             # If it's small talk/greeting, use suggested response directly
-            # (Avoids "Information not found" for non-knowledge questions)
-            is_small_talk = any(k in reason for k in ["sapaan", "salam", "basa-basi", "umum", "greeting", "small talk"])
+            is_small_talk = any(k in reason for k in ["sapaan", "salam", "greeting", "small talk", "basa-basi"])
             
             if suggested_response and is_small_talk:
                 logger.info(f"Using suggested response for small talk: {suggested_response}")
                 answer = suggested_response
+                intent = "small_talk"
             else:
                 # Generate RAG Answer for knowledge questions
                 # Get history from session if needed (simplified here)
@@ -153,10 +167,18 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
                     history=history
                 )
                 answer = result["answer"]
+                # intent remains from classifier or could be refined by RAG
+            
+            # Calculate response time
+            end_time = time.time()
+            response_time = end_time - start_time
             
             # Update Session
             session_manager.update_activity(msg.sender_id)
-            # We could append history here for memory
+            
+            # Save conversation history to DB with Analytics data
+            session_manager.add_history(msg.sender_id, "user", msg.message, intent=intent)
+            session_manager.add_history(msg.sender_id, "assistant", answer, intent=intent, response_time=response_time)
             
             return WebhookResponse(status="ai_replied", reply=answer)
             
@@ -164,6 +186,78 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
         logger.error(f"Webhook error: {e}")
         # Fail safe: don't reply if error, let human handle
         return WebhookResponse(status="error", reply=None)
+
+
+@app.get("/analytics", tags=["Statistics"])
+async def get_analytics(days: int = 7):
+    """Get analytics data for dashboard"""
+    try:
+        if session_manager and session_manager.db:
+            return session_manager.db.get_analytics_summary(days)
+        return {}
+    except Exception as e:
+        logger.error(f"Failed to get analytics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get analytics: {str(e)}"
+        )
+
+
+@app.post("/log-message", tags=["Integration"])
+async def log_message(msg: LogMessage):
+    """
+    Log a message manually (e.g. sent by human agent)
+    """
+    try:
+        logger.info(f"Logging message for {msg.sender_id} from {msg.agent_id or 'system'}")
+        
+        session_manager.add_history(
+            user_id=msg.sender_id,
+            role=msg.role,
+            content=msg.message,
+            agent_id=msg.agent_id
+        )
+        return {"status": "logged"}
+    except Exception as e:
+        logger.error(f"Failed to log message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to log message: {str(e)}"
+        )
+
+
+@app.get("/reports/messages", response_model=ReportResponse, tags=["Reports"])
+async def get_message_reports(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    intent: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    Get filtered message logs for reporting
+    """
+    try:
+        if session_manager and session_manager.db:
+            result = session_manager.db.get_message_reports(
+                start_date=start_date,
+                end_date=end_date,
+                agent_id=agent_id,
+                intent=intent,
+                search=search,
+                limit=limit,
+                offset=offset
+            )
+            return ReportResponse(**result)
+        return ReportResponse(messages=[], total=0, limit=limit, offset=offset)
+    except Exception as e:
+        logger.error(f"Failed to get message reports: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get reports: {str(e)}"
+        )
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
