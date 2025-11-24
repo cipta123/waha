@@ -116,7 +116,7 @@ export default function ChatInterface() {
           <Bot className="w-5 h-5 text-white" />
         </div>
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Test & Train Chat</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Test & Train</h2>
           <p className="text-sm text-gray-500">Test answers and correct them to train the AI</p>
         </div>
       </div>

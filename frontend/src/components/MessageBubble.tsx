@@ -36,14 +36,14 @@ export function MessageBubble({
   const isHuman = message.repliedBy === 'human';
   const isOptimistic = message.id.startsWith('temp-');
 
-  let bubbleColor = "bg-white border border-slate-200";
+  let bubbleColor = "bg-white text-slate-900 border border-slate-200";
   if (message.direction === "outgoing") {
     if (isAi) {
-      bubbleColor = "bg-blue-50 border border-blue-100";
+      bubbleColor = "bg-blue-50 text-slate-900 border border-blue-100";
     } else if (isHuman) {
-      bubbleColor = "bg-green-50 border border-green-100";
+      bubbleColor = "bg-green-50 text-slate-900 border border-green-100";
     } else {
-      bubbleColor = "bg-blue-100 text-blue-900 border border-blue-200"; // User sent
+      bubbleColor = "bg-blue-100 text-slate-900 border border-blue-200"; // User sent
     }
   }
 

@@ -1,6 +1,6 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, In, Not, Like } from 'typeorm';
+import { Repository, IsNull, In, Not, Like, LessThan } from 'typeorm';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
@@ -445,11 +445,40 @@ export class MessagesService {
     // Log conversation mode for debugging
     this.logger.log(`Conversation ${savedConversation.id} mode: ${savedConversation.mode}, has text: ${!!payload.text}`);
 
+    // Check for Queue Status Check (Human Mode + Pending + No Owner)
+    if (savedConversation.mode === 'human' && savedConversation.status === 'pending' && !savedConversation.owner) {
+      const textLower = payload.text?.toLowerCase().trim();
+      if (textLower === 'status' || textLower === 'antrian' || textLower === 'antrean' || textLower === 'cek antrian') {
+         const position = await this.getQueuePosition(savedConversation.id);
+         const replyText = `Posisi antrean Anda saat ini: *${position}*. Mohon bersabar, staf kami akan segera melayani Anda.`;
+         
+         await this.wahaService.sendText({
+            chatId: savedConversation.waChatId,
+            text: replyText,
+         });
+
+         // Save reply
+         const replyMsg = this.messageRepository.create({
+            conversation: savedConversation,
+            direction: 'outgoing',
+            text: replyText,
+            repliedBy: 'ai',
+            ackStatus: 'delivered'
+         });
+         await this.messageRepository.save(replyMsg);
+         
+         return savedMessage; // Return early, don't process AI
+      }
+    }
+
     // Check global AI setting
     const isAiEnabled = await this.settingsService.isAiEnabled();
 
-    // Only process AI classification if conversation is in AI mode AND global AI is enabled
-    if (savedConversation.mode === 'ai' && payload.text && isAiEnabled) {
+    // Check if it's a group chat
+    const isGroup = savedConversation.waChatId.endsWith('@g.us');
+
+    // Only process AI classification if conversation is in AI mode AND global AI is enabled AND NOT a group
+    if (savedConversation.mode === 'ai' && payload.text && isAiEnabled && !isGroup) {
       this.logger.log(`Processing AI classification for conversation ${savedConversation.id}`);
       
       // Call RAG service asynchronously (don't block webhook response)
@@ -666,6 +695,25 @@ export class MessagesService {
     };
   }
 
+  async getQueuePosition(conversationId: string): Promise<number> {
+    const conversation = await this.conversationRepository.findOne({ where: { id: conversationId } });
+    if (!conversation) return 0;
+
+    // Count conversations that are in queue AND have older updatedAt (entered earlier)
+    // Note: This is a simple FIFO based on last update. Chatting might push user to back.
+    const count = await this.conversationRepository.count({
+      where: {
+        mode: 'human',
+        status: 'pending',
+        owner: IsNull(),
+        updatedAt: LessThan(conversation.updatedAt),
+        waChatId: Not(Like('%@broadcast')),
+      }
+    });
+
+    return count + 1;
+  }
+
   async toggleAiMode(conversationId: string, mode: 'ai' | 'human', reason?: string) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
@@ -706,6 +754,27 @@ export class MessagesService {
     }
 
     await this.conversationRepository.save(conversation);
+
+    // Send Queue Notification if entering queue
+    if (mode === 'human' && !conversation.owner) {
+      const position = await this.getQueuePosition(conversation.id);
+      const queueMsg = `Mohon menunggu, Anda telah masuk antrean nomor *${position}*. Kami akan segera menghubungkan Anda dengan staf kami. (Ketik *status* untuk cek antrean)`;
+      
+      await this.wahaService.sendText({
+        chatId: conversation.waChatId,
+        text: queueMsg,
+      });
+      
+      // Save outgoing system message
+      const msg = this.messageRepository.create({
+          conversation,
+          direction: 'outgoing',
+          text: queueMsg,
+          ackStatus: 'delivered',
+          repliedBy: 'ai',
+      });
+      await this.messageRepository.save(msg);
+    }
 
     // If switching to AI mode, reset RAG service session
     if (mode === 'ai') {

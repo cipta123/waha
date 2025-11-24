@@ -44,11 +44,13 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-lg">
-                <Database className="w-6 h-6 text-white" />
-              </div>
+              <img 
+                src="/logo-ut.png" 
+                alt="UT Logo" 
+                className="h-12 w-auto object-contain" 
+              />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">RAG Knowledge Base</h1>
+                <h1 className="text-2xl font-bold text-gray-900">UT Serang AI Knowledge Base</h1>
                 <p className="text-sm text-gray-500">Manage your documents and test AI responses</p>
               </div>
             </div>
