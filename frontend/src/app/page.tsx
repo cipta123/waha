@@ -11,10 +11,20 @@ import {
   markConversationAsRead,
   toggleAiMode,
   logMessageToRag,
+  getQueueStatus,
+  setQueueStatus,
+  assignConversation,
+  unassignConversation,
+  resolveConversation,
+  transferConversation,
+  deleteConversation,
+  deleteMessage,
+  fetchUsers,
   type Conversation,
   type Message,
   type SessionSummary,
   type HealthResponse,
+  type User,
 } from "@/lib/api";
 import { ConversationList } from "@/components/ConversationList";
 import { ChatHeader } from "@/components/ChatHeader";
@@ -26,7 +36,7 @@ import { useRouter } from "next/navigation";
 export default function InboxPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ fullName: string; username: string; role: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ userId: string; fullName: string; username: string; role: string } | null>(null);
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -48,6 +58,13 @@ export default function InboxPage() {
   const [isInboxSidebarOpen, setIsInboxSidebarOpen] = useState(true);
   const [newMessagePhone, setNewMessagePhone] = useState("");
   const [newMessageText, setNewMessageText] = useState("");
+  const [queueEnabled, setQueueEnabled] = useState(true);
+  const [togglingQueue, setTogglingQueue] = useState(false);
+  const [conversationType, setConversationType] = useState<'all' | 'my' | 'queue'>('all');
+  const [queueCount, setQueueCount] = useState(0);
+  const [allCount, setAllCount] = useState(0);
+  const [myCount, setMyCount] = useState(0);
+  const [agents, setAgents] = useState<User[]>([]);
 
   // Ref for auto-scroll to bottom
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -98,22 +115,69 @@ export default function InboxPage() {
   useEffect(() => {
     if (isAuthenticated) {
       void bootstrap();
+      void fetchQueueStatus();
     }
   }, [isAuthenticated]);
+
+  // Fetch queue status
+  const fetchQueueStatus = async () => {
+    try {
+      const status = await getQueueStatus();
+      setQueueEnabled(status.enabled);
+    } catch (err) {
+      console.error('Failed to fetch queue status:', err);
+    }
+  };
+
+  // Toggle queue handler
+  const handleToggleQueue = async () => {
+    setTogglingQueue(true);
+    try {
+      const result = await setQueueStatus(!queueEnabled);
+      setQueueEnabled(result.enabled);
+      alert(result.message);
+    } catch (err: any) {
+      console.error('Failed to toggle queue:', err);
+      alert('Failed to toggle queue system: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setTogglingQueue(false);
+    }
+  };
+
+  // Re-fetch conversations when conversationType changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      void bootstrap();
+    }
+  }, [conversationType]);
 
   // Poll for new conversations every 1 second for real-time updates
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const conversationsRes = await fetchConversations();
+        const userId = currentUser?.userId || localStorage.getItem('userId') || undefined;
+        
+        const [conversationsRes, queueRes, allRes, myRes] = await Promise.all([
+          fetchConversations({
+            type: conversationType,
+            userId: conversationType === 'my' ? userId : undefined,
+          }),
+          fetchConversations({ type: 'queue' }),
+          fetchConversations({ type: 'all' }),
+          userId ? fetchConversations({ type: 'my', userId }) : Promise.resolve([]),
+        ]);
+        
         setConversations(conversationsRes);
+        setQueueCount(queueRes.length);
+        setAllCount(allRes.length);
+        setMyCount(myRes.length);
       } catch (err) {
         console.error('Failed to refresh conversations:', err);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [conversationType, currentUser]);
 
   // Poll for new messages in selected conversation every 3 seconds
   useEffect(() => {
@@ -197,15 +261,30 @@ export default function InboxPage() {
   async function bootstrap() {
     try {
       setLoadingConversations(true);
-      const [healthRes, sessionsRes, conversationsRes] = await Promise.all([
+      const userId = currentUser?.userId || localStorage.getItem('userId') || undefined;
+      
+      const [healthRes, sessionsRes, conversationsRes, queueRes, allRes, myRes, agentsRes] = await Promise.all([
         fetchHealth(),
         fetchSessions(),
-        fetchConversations(),
+        fetchConversations({
+          type: conversationType,
+          userId: conversationType === 'my' ? userId : undefined,
+        }),
+        fetchConversations({ type: 'queue' }), // Queue count
+        fetchConversations({ type: 'all' }), // All count
+        userId ? fetchConversations({ type: 'my', userId }) : Promise.resolve([]), // My count
+        fetchUsers(), // Fetch agents list
       ]);
+      
       setHealth(healthRes);
       setSessions(sessionsRes);
       setConversations(conversationsRes);
-      if (conversationsRes.length > 0) {
+      setQueueCount(queueRes.length);
+      setAllCount(allRes.length);
+      setMyCount(myRes.length);
+      setAgents(agentsRes);
+      
+      if (conversationsRes.length > 0 && !selectedConversationId) {
         await selectConversation(conversationsRes[0].id);
       }
     } catch (err) {
@@ -296,6 +375,89 @@ export default function InboxPage() {
       setSelectedImage(reader.result as string);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function handleAssignToMe(conversationId: string) {
+    const userId = currentUser?.userId || localStorage.getItem('userId');
+    if (!userId) {
+      alert('User ID not found. Please re-login.');
+      return;
+    }
+
+    try {
+      await assignConversation(conversationId, userId);
+      await bootstrap(); // Refresh conversations
+      alert('Conversation assigned to you successfully!');
+    } catch (err: any) {
+      console.error('Failed to assign conversation:', err);
+      alert('Failed to assign conversation: ' + (err?.message || 'Unknown error'));
+    }
+  }
+
+  async function handleUnassign(conversationId: string) {
+    try {
+      await unassignConversation(conversationId);
+      await bootstrap(); // Refresh conversations
+      alert('Conversation returned to queue successfully!');
+    } catch (err: any) {
+      console.error('Failed to unassign conversation:', err);
+      alert('Failed to unassign conversation: ' + (err?.message || 'Unknown error'));
+    }
+  }
+
+  async function handleResolve(conversationId: string) {
+    const notes = prompt('Add resolution notes (optional):');
+    
+    try {
+      const result = await resolveConversation(conversationId, notes || undefined);
+      await bootstrap(); // Refresh conversations
+      alert('Conversation marked as resolved successfully!');
+      
+      // Clear selection if current conversation was resolved
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+        setMessages([]);
+      }
+    } catch (err: any) {
+      console.error('Failed to resolve conversation:', err);
+      alert('Failed to resolve conversation: ' + (err?.message || 'Unknown error'));
+    }
+  }
+
+  async function handleTransfer(conversationId: string, toUserId: string) {
+    const fromUserId = currentUser?.userId || localStorage.getItem('userId');
+    if (!fromUserId) {
+      alert('User ID not found. Please re-login.');
+      return;
+    }
+
+    try {
+      const result = await transferConversation(conversationId, fromUserId, toUserId);
+      await bootstrap(); // Refresh conversations
+      alert(`Conversation transferred to ${result.transferredTo.fullName} successfully!`);
+      
+      // Clear selection if current conversation was transferred
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null);
+        setMessages([]);
+      }
+    } catch (err: any) {
+      console.error('Failed to transfer conversation:', err);
+      alert('Failed to transfer conversation: ' + (err?.message || 'Unknown error'));
+    }
+  }
+
+  async function handleDeleteMessage(messageId: string) {
+    try {
+      await deleteMessage(messageId);
+      // Remove message from local state
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      // Don't alert on success to keep flow smooth, or use a toast
+      // alert('Message deleted successfully!');
+    } catch (err: any) {
+      console.error('Failed to delete message:', err);
+      alert('Failed to delete message: ' + (err?.message || 'Unknown error'));
+    }
   }
 
   async function handleSendImage() {
@@ -433,15 +595,7 @@ export default function InboxPage() {
 
     try {
       await toggleAiMode(selectedConversation.id, mode);
-
-      // Update local state
-      setConversations(prev => prev.map(c =>
-        c.id === selectedConversation.id ? { ...c, mode } : c
-      ));
-
-      // Update selected conversation
-      const updated = { ...selectedConversation, mode };
-      setConversations(prev => prev.map(c => c.id === updated.id ? updated : c));
+      await bootstrap(); // Refresh conversations and badges
     } catch (err) {
       console.error('Failed to toggle AI mode:', err);
       setError((err as Error).message ?? "Failed to toggle AI mode");
@@ -453,8 +607,8 @@ export default function InboxPage() {
   }
 
   return (
-    <main className="flex h-screen bg-slate-100 overflow-hidden">
-      <div className="flex flex-1 flex-col min-w-0 bg-white h-full">
+    <main className="flex h-screen w-full bg-slate-100 overflow-hidden">
+      <div className="flex flex-1 flex-col min-w-0 max-w-full bg-white h-full">
 
         {/* GLOBAL HEADER - Hide on mobile when conversation is selected */}
         <header className={`h-16 border-b border-slate-200 px-6 flex items-center justify-between shrink-0 bg-white ${selectedConversationId ? 'hidden md:flex' : 'flex'}`}>
@@ -495,6 +649,34 @@ export default function InboxPage() {
               </svg>
             </button>
 
+            {/* Queue Toggle Switch */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
+              <span className="text-xs font-medium text-slate-600">Queue</span>
+              <button
+                onClick={handleToggleQueue}
+                disabled={togglingQueue}
+                className={classNames(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+                  queueEnabled ? "bg-blue-600" : "bg-slate-300",
+                  togglingQueue && "opacity-50 cursor-not-allowed"
+                )}
+                title={queueEnabled ? "Queue system enabled" : "Queue system disabled"}
+              >
+                <span
+                  className={classNames(
+                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    queueEnabled ? "translate-x-5" : "translate-x-0.5"
+                  )}
+                />
+              </button>
+              <span className={classNames(
+                "text-xs font-semibold",
+                queueEnabled ? "text-blue-600" : "text-slate-400"
+              )}>
+                {queueEnabled ? "ON" : "OFF"}
+              </span>
+            </div>
+
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-semibold text-xs">
                 {currentUser?.fullName
@@ -509,59 +691,67 @@ export default function InboxPage() {
         </header>
 
         {/* CONTENT BODY */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden w-full">
 
-          {/* INBOX SIDEBAR FILTER */}
+          {/* INBOX SIDEBAR FILTER - Queue Tabs */}
           <div
             className={`border-r border-slate-200 bg-white flex flex-col transition-all duration-300 ease-in-out overflow-hidden hidden md:flex ${isInboxSidebarOpen ? 'w-60 opacity-100' : 'w-0 opacity-0 border-none'
               }`}
           >
             <div className="w-60 min-w-[15rem]">
 
-              {/* Section 1 */}
+              {/* Queue System Tabs */}
               <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Saya</span>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Conversations</span>
                 </div>
                 <ul className="space-y-1">
                   <li>
-                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium bg-blue-50 text-blue-700 rounded-md">
-                      <span>Ditugaskan ke saya</span>
-                      <span className="text-xs font-bold">1</span>
+                    <button
+                      onClick={() => setConversationType('all')}
+                      className={classNames(
+                        "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                        conversationType === 'all'
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      <span>All Conversations</span>
+                      <span className="text-xs font-bold">{allCount}</span>
                     </button>
                   </li>
                   <li>
-                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                      <span>Kolaborasi</span>
+                    <button
+                      onClick={() => setConversationType('my')}
+                      className={classNames(
+                        "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                        conversationType === 'my'
+                          ? "bg-blue-50 text-blue-700"
+                          : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      <span>My Conversations</span>
+                      <span className="text-xs font-bold">{myCount}</span>
                     </button>
                   </li>
                   <li>
-                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                      <span>Mention</span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Section 2 */}
-              <div className="p-4 pt-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inbox Perusahaan</span>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
-                </div>
-                <ul className="space-y-1">
-                  <li>
-                    <button className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md">
-                      <span>Semua</span>
+                    <button
+                      onClick={() => setConversationType('queue')}
+                      className={classNames(
+                        "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                        conversationType === 'queue'
+                          ? "bg-orange-50 text-orange-700"
+                          : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>Queue</span>
+                        {queueCount > 0 && (
+                          <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-orange-500 rounded-full">
+                            {queueCount}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   </li>
                 </ul>
@@ -607,11 +797,15 @@ export default function InboxPage() {
               onSelectConversation={selectConversation}
               loading={loadingConversations}
               searchTerm={searchTerm}
+              conversationType={conversationType}
+              onAssign={handleAssignToMe}
+              onUnassign={handleUnassign}
+              currentUserId={currentUser?.userId || localStorage.getItem('userId') || undefined}
             />
           </section>
 
           {/* Chat area */}
-          <section className={`flex-col bg-[#efeae2] relative isolate overflow-hidden pb-16 md:pb-0 ${selectedConversationId ? 'flex flex-1 min-w-0' : 'hidden md:flex md:flex-1 md:min-w-0'}`}>
+          <section className={`flex-col bg-[#efeae2] relative isolate overflow-hidden pb-16 md:pb-0 ${selectedConversationId ? 'flex flex-1 min-w-0 max-w-full' : 'hidden md:flex md:flex-1 md:min-w-0 max-w-full'}`}>
             {/* Background Pattern/Logo */}
             <div
               className="absolute inset-0 opacity-20 pointer-events-none -z-10"
@@ -628,9 +822,13 @@ export default function InboxPage() {
               sessions={sessions}
               onToggleAiMode={handleToggleAiMode}
               onBack={() => setSelectedConversationId(null)}
+              onResolve={handleResolve}
+              onTransfer={handleTransfer}
+              currentUserId={currentUser?.userId || localStorage.getItem('userId') || undefined}
+              agents={agents}
             />
 
-            <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-hidden">
+            <div className="flex-1 flex flex-col min-h-0 relative z-0 overflow-hidden">
               <MessageList
                 messages={messages}
                 loadingMessages={loadingMessages}
@@ -643,6 +841,7 @@ export default function InboxPage() {
                 setOpenMenuId={setOpenMenuId}
                 onReply={setReplyingTo}
                 onImageClick={(url) => setSelectedImage(url)}
+                onDelete={handleDeleteMessage}
               />
             </div>
 

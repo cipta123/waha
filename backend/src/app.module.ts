@@ -8,9 +8,11 @@ import { MessagesModule } from './messages/messages.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { RagModule } from './rag/rag.module';
 import { AuthModule } from './auth/auth.module';
+import { SettingsModule } from './settings/settings.module';
 import { UserEntity } from './database/entities/user.entity';
 import { ConversationEntity } from './database/entities/conversation.entity';
 import { MessageEntity } from './database/entities/message.entity';
+import { SettingEntity } from './database/entities/setting.entity';
 
 @Module({
   imports: [
@@ -31,7 +33,7 @@ import { MessageEntity } from './database/entities/message.entity';
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', ''),
         database: configService.get<string>('DB_NAME', 'waha'),
-        entities: [UserEntity, ConversationEntity, MessageEntity],
+        entities: [UserEntity, ConversationEntity, MessageEntity, SettingEntity],
         synchronize: configService.get<string>('DB_SYNC', 'false') === 'true',
         logging: configService.get<string>('DB_LOGGING', 'false') === 'true',
       }),
@@ -40,6 +42,7 @@ import { MessageEntity } from './database/entities/message.entity';
     SessionsModule,
     RagModule,
     AuthModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
 })

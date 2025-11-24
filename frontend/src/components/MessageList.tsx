@@ -14,6 +14,7 @@ interface MessageListProps {
   setOpenMenuId: (id: string | null) => void;
   onReply: (message: Message) => void;
   onImageClick: (url: string) => void;
+  onDelete: (messageId: string) => void;
 }
 
 export function MessageList({
@@ -28,6 +29,7 @@ export function MessageList({
   setOpenMenuId,
   onReply,
   onImageClick,
+  onDelete,
 }: MessageListProps) {
   return (
     <div 
@@ -54,6 +56,7 @@ export function MessageList({
               setOpenMenuId={setOpenMenuId}
               onReply={onReply}
               onImageClick={onImageClick}
+              onDelete={onDelete}
             />
           ))}
           {/* Invisible element at the end for auto-scroll */}

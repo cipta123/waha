@@ -28,9 +28,10 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      // Save token
+      // Save token and user data
       localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('user', JSON.stringify({ ...data.user, userId: data.user.id }));
+      localStorage.setItem('userId', data.user.id); // Store userId separately for easy access
 
       // Redirect
       router.push('/');

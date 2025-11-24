@@ -11,7 +11,7 @@ export class ConversationEntity {
   waChatId!: string;
 
   @Column({ default: 'open' })
-  status!: 'open' | 'pending' | 'closed';
+  status!: 'open' | 'pending' | 'resolved' | 'closed';
 
   @Column({ nullable: true })
   title?: string;
@@ -30,6 +30,12 @@ export class ConversationEntity {
 
   @Column({ nullable: true })
   handoffReason?: string;
+
+  @Column({ nullable: true })
+  resolvedAt?: Date;
+
+  @Column({ type: 'text', nullable: true })
+  resolutionNotes?: string;
 
   @ManyToOne(() => UserEntity, (user) => user.conversations, { nullable: true })
   owner?: UserEntity | null;

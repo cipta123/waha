@@ -42,7 +42,7 @@ export class MessageEntity {
   })
   ackStatus?: MessageAckStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   mediaUrl?: string;
 
   @Column({ nullable: true })
@@ -51,13 +51,13 @@ export class MessageEntity {
   @Column({ nullable: true })
   mimeType?: string; // image/jpeg, image/png, etc
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   fileName?: string;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   payload?: Record<string, unknown>;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   quotedMsg?: {
     id: string;
     text: string;

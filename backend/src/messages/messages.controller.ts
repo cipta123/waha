@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, Delete } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
@@ -7,8 +7,12 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Get('conversations')
-  listConversations(@Query('limit') limit?: number) {
-    return this.messagesService.listConversations(limit);
+  listConversations(
+    @Query('limit') limit?: number,
+    @Query('type') type?: 'all' | 'my' | 'queue',
+    @Query('userId') userId?: string,
+  ) {
+    return this.messagesService.listConversations(limit, type, userId);
   }
 
   @Get(':conversationId')
@@ -46,5 +50,44 @@ export class MessagesController {
     @Body() body: { mode: 'ai' | 'human'; reason?: string }
   ) {
     return this.messagesService.toggleAiMode(conversationId, body.mode, body.reason);
+  }
+
+  @Post(':conversationId/assign')
+  assignConversation(
+    @Param('conversationId') conversationId: string,
+    @Body() body: { userId: string }
+  ) {
+    return this.messagesService.assignConversation(conversationId, body.userId);
+  }
+
+  @Post(':conversationId/unassign')
+  unassignConversation(@Param('conversationId') conversationId: string) {
+    return this.messagesService.unassignConversation(conversationId);
+  }
+
+  @Post(':conversationId/resolve')
+  resolveConversation(
+    @Param('conversationId') conversationId: string,
+    @Body() body: { notes?: string }
+  ) {
+    return this.messagesService.resolveConversation(conversationId, body.notes);
+  }
+
+  @Post(':conversationId/transfer')
+  transferConversation(
+    @Param('conversationId') conversationId: string,
+    @Body() body: { fromUserId: string; toUserId: string }
+  ) {
+    return this.messagesService.transferConversation(conversationId, body.fromUserId, body.toUserId);
+  }
+
+  @Delete(':conversationId')
+  deleteConversation(@Param('conversationId') conversationId: string) {
+    return this.messagesService.deleteConversation(conversationId);
+  }
+
+  @Delete('msg/:messageId')
+  deleteMessage(@Param('messageId') messageId: string) {
+    return this.messagesService.deleteMessage(messageId);
   }
 }

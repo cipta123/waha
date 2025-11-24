@@ -1,15 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, In, Not, Like } from 'typeorm';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
 import { ConversationEntity } from '../database/entities/conversation.entity';
 import { MessageEntity } from '../database/entities/message.entity';
+import { UserEntity } from '../database/entities/user.entity';
 import { SendMessageDto } from './dto/send-message.dto';
 import { WahaService } from '../waha/waha.service';
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { RagService } from '../rag/rag.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class MessagesService {
@@ -20,15 +22,56 @@ export class MessagesService {
     private readonly conversationRepository: Repository<ConversationEntity>,
     @InjectRepository(MessageEntity)
     private readonly messageRepository: Repository<MessageEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
     private readonly wahaService: WahaService,
     private readonly ragService: RagService,
+    private readonly settingsService: SettingsService,
   ) {}
 
-  async listConversations(limit = 25) {
-    const conversations = await this.conversationRepository.find({
-      order: { updatedAt: 'DESC' },
-      take: limit,
-    });
+  async listConversations(limit = 25, type: 'all' | 'my' | 'queue' = 'all', userId?: string) {
+    let conversations: ConversationEntity[];
+
+    if (type === 'my' && userId) {
+      // Conversations assigned to this user
+      conversations = await this.conversationRepository.find({
+        where: {
+          owner: { id: userId },
+          status: In(['open', 'pending']),
+          waChatId: Not(Like('%@broadcast')),
+        },
+        order: { updatedAt: 'DESC' },
+        take: limit,
+        relations: ['owner'],
+      });
+    } else if (type === 'queue') {
+      // Queue: ONLY human handoffs waiting for agent assignment
+      // - mode = 'human' (human handoff requested)
+      // - owner = null (not assigned to any agent)
+      // - status = 'pending' (waiting for agent)
+      // AI mode conversations are NOT in queue (handled automatically)
+      conversations = await this.conversationRepository
+        .createQueryBuilder('conversation')
+        .leftJoinAndSelect('conversation.owner', 'owner')
+        .where('conversation.mode = :mode', { mode: 'human' })
+        .andWhere('conversation.owner IS NULL')
+        .andWhere('conversation.status = :status', { status: 'pending' })
+        .andWhere('conversation.waChatId NOT LIKE :broadcast', { broadcast: '%@broadcast' })
+        .orderBy('conversation.updatedAt', 'DESC')
+        .take(limit)
+        .getMany();
+    } else {
+      // All conversations
+      conversations = await this.conversationRepository.find({
+        where: {
+          status: In(['open', 'pending', 'resolved']),
+          waChatId: Not(Like('%@broadcast')),
+        },
+        order: { updatedAt: 'DESC' },
+        take: limit,
+        relations: ['owner'],
+      });
+    }
 
     // Fetch last message for each conversation
     const conversationsWithLastMessage = await Promise.all(
@@ -336,6 +379,12 @@ export class MessagesService {
     conversation.lastMessageAt = new Date();
     conversation.unreadCount = (conversation.unreadCount || 0) + 1; // Increment unread count
 
+    // Re-open conversation if it was resolved/closed
+    if (conversation.status === 'resolved' || conversation.status === 'closed') {
+      conversation.status = 'open';
+      this.logger.log(`Conversation ${conversation.id} re-opened due to new message`);
+    }
+
     const savedConversation = await this.conversationRepository.save(conversation);
 
     // Extract media info from raw payload
@@ -396,8 +445,11 @@ export class MessagesService {
     // Log conversation mode for debugging
     this.logger.log(`Conversation ${savedConversation.id} mode: ${savedConversation.mode}, has text: ${!!payload.text}`);
 
-    // Only process AI classification if conversation is in AI mode
-    if (savedConversation.mode === 'ai' && payload.text) {
+    // Check global AI setting
+    const isAiEnabled = await this.settingsService.isAiEnabled();
+
+    // Only process AI classification if conversation is in AI mode AND global AI is enabled
+    if (savedConversation.mode === 'ai' && payload.text && isAiEnabled) {
       this.logger.log(`Processing AI classification for conversation ${savedConversation.id}`);
       
       // Call RAG service asynchronously (don't block webhook response)
@@ -406,7 +458,7 @@ export class MessagesService {
           this.logger.error(`AI classification failed: ${err.message}`);
         });
     } else {
-      this.logger.log(`Skipping AI classification - mode: ${savedConversation.mode}, text: ${payload.text ? 'yes' : 'no'}`);
+      this.logger.log(`Skipping AI classification - mode: ${savedConversation.mode}, text: ${payload.text ? 'yes' : 'no'}, Global AI: ${isAiEnabled ? 'ON' : 'OFF'}`);
     }
 
     return savedMessage;
@@ -478,14 +530,16 @@ export class MessagesService {
             }
         }
 
-        // Switch to human mode
+        // Switch to human mode using centralized logic (handles queue status)
         this.logger.log(`Switching conversation ${conversation.id} to human mode: ${classification.reason || 'human mode active'}`);
         
-        conversation.mode = 'human';
-        conversation.handoffReason = classification.reason || 'User requested human assistance';
-        await this.conversationRepository.save(conversation);
+        await this.toggleAiMode(
+            conversation.id, 
+            'human', 
+            classification.reason || 'User requested human assistance'
+        );
 
-        this.logger.log(`Conversation ${conversation.id} switched to human mode`);
+        this.logger.log(`Conversation ${conversation.id} switched to human mode via handoff`);
       }
     } catch (error: any) {
       this.logger.error(`Error in AI classification: ${error?.message || error}`);
@@ -615,10 +669,35 @@ export class MessagesService {
   async toggleAiMode(conversationId: string, mode: 'ai' | 'human', reason?: string) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
+      relations: ['owner'],
     });
 
     if (!conversation) {
       throw new Error('Conversation not found');
+    }
+
+    // Check if queue is enabled when switching to human mode
+    if (mode === 'human') {
+      const queueEnabled = await this.settingsService.isQueueEnabled();
+      if (!queueEnabled) {
+        throw new HttpException(
+          'Queue system is currently disabled. Cannot switch to human mode.',
+          HttpStatus.FORBIDDEN
+        );
+      }
+
+      // If switching to human mode and no owner assigned, move to queue (pending)
+      if (!conversation.owner) {
+        conversation.status = 'pending';
+      } else {
+        // If has owner, ensure it's open
+        conversation.status = 'open';
+      }
+    } else {
+      // Switching to AI mode
+      conversation.status = 'open'; // AI handles open chats
+      // Optional: Unassign owner when switching back to AI?
+      // conversation.owner = null; 
     }
 
     conversation.mode = mode;
@@ -699,5 +778,184 @@ export class MessagesService {
       this.logger.error(`Failed to proxy media: ${error}`);
       return res.status(500).send('Failed to load media');
     }
+  }
+
+  async assignConversation(conversationId: string, userId: string) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    conversation.owner = user;
+    conversation.status = 'open'; // Mark as open when assigned
+    conversation.unreadCount = 0; // Reset unread count when assigned (agent will read)
+    await this.conversationRepository.save(conversation);
+
+    this.logger.log(`Conversation ${conversationId} assigned to user ${userId}`);
+
+    return {
+      success: true,
+      conversationId,
+      assignedTo: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+      },
+    };
+  }
+
+  async unassignConversation(conversationId: string) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    conversation.owner = null;
+    conversation.status = 'pending'; // Mark as pending when unassigned (back to queue)
+    await this.conversationRepository.save(conversation);
+
+    this.logger.log(`Conversation ${conversationId} unassigned (returned to queue)`);
+
+    return {
+      success: true,
+      conversationId,
+      message: 'Conversation returned to queue',
+    };
+  }
+
+  async resolveConversation(conversationId: string, notes?: string) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+      relations: ['owner'],
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const previousOwner = conversation.owner; // Store owner before unassigning
+
+    // Mark as resolved but keep open for AI handling
+    conversation.status = 'open'; 
+    conversation.mode = 'ai'; // Switch back to AI mode
+    conversation.owner = null; // Unassign owner
+    conversation.resolvedAt = new Date();
+    
+    // Reset RAG session so AI starts fresh if user replies
+    try {
+      await this.ragService.classifyMessage({
+        sender_id: conversation.waChatId,
+        message: '__RESET_SESSION__',
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to reset RAG session on resolve: ${error}`);
+    }
+
+    if (notes) {
+      conversation.resolutionNotes = notes;
+    }
+
+    await this.conversationRepository.save(conversation);
+
+    this.logger.log(`Conversation ${conversationId} marked as resolved and switched to AI mode`);
+
+    return {
+      success: true,
+      conversationId,
+      message: 'Conversation marked as resolved',
+      resolvedBy: previousOwner ? {
+        id: previousOwner.id,
+        username: previousOwner.username,
+        fullName: previousOwner.fullName,
+      } : null,
+    };
+  }
+
+  async transferConversation(conversationId: string, fromUserId: string, toUserId: string) {
+    const conversation = await this.conversationRepository.findOne({ 
+      where: { id: conversationId },
+      relations: ['owner']
+    });
+
+    if (!conversation) throw new Error('Conversation not found');
+
+    // Validate ownership
+    if (conversation.owner?.id !== fromUserId) {
+      throw new Error('You can only transfer conversations assigned to you');
+    }
+
+    const targetUser = await this.userRepository.findOne({ where: { id: toUserId } });
+    if (!targetUser) throw new Error('Target agent not found');
+
+    const previousOwner = conversation.owner;
+    conversation.owner = targetUser;
+    // Ensure status is open
+    conversation.status = 'open';
+
+    await this.conversationRepository.save(conversation);
+    this.logger.log(`Conversation ${conversationId} transferred from ${previousOwner?.username} to ${targetUser.username}`);
+
+    return {
+      conversationId,
+      transferredFrom: previousOwner ? {
+        id: previousOwner.id,
+        username: previousOwner.username,
+        fullName: previousOwner.fullName,
+      } : null,
+      transferredTo: {
+        id: targetUser.id,
+        username: targetUser.username,
+        fullName: targetUser.fullName,
+      }
+    };
+  }
+
+  async deleteConversation(conversationId: string) {
+    const conversation = await this.conversationRepository.findOne({ 
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    // Delete messages explicitly (if cascade not set)
+    await this.messageRepository.delete({ conversation: { id: conversationId } });
+    
+    // Delete conversation
+    await this.conversationRepository.delete(conversationId);
+    
+    this.logger.log(`Conversation ${conversationId} deleted`);
+
+    return { success: true, id: conversationId };
+  }
+
+  async deleteMessage(messageId: string) {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    await this.messageRepository.remove(message);
+    this.logger.log(`Message ${messageId} deleted`);
+
+    return { success: true, id: messageId };
   }
 }

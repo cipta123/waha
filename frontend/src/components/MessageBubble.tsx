@@ -7,6 +7,7 @@ interface MessageBubbleProps {
   setOpenMenuId: (id: string | null) => void;
   onReply: (message: Message) => void;
   onImageClick: (url: string) => void;
+  onDelete: (messageId: string) => void;
 }
 
 // Helper to get dynamic API URL for media
@@ -29,6 +30,7 @@ export function MessageBubble({
   setOpenMenuId,
   onReply,
   onImageClick,
+  onDelete,
 }: MessageBubbleProps) {
   const isAi = message.repliedBy === 'ai';
   const isHuman = message.repliedBy === 'human';
@@ -89,7 +91,9 @@ export function MessageBubble({
             </button>
             <button
               onClick={() => {
-                // TODO: Implement delete functionality
+                if (confirm('Are you sure you want to delete this message?')) {
+                  onDelete(message.id);
+                }
                 setOpenMenuId(null);
               }}
               className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"

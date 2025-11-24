@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { UserManagement } from '@/components/UserManagement';
+import { getAiStatus, setAiStatus } from '@/lib/api';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
@@ -12,6 +13,12 @@ export default function SettingsPage() {
     webhookSecret: '',
   });
   const [saved, setSaved] = useState(false);
+  
+  // AI Settings State
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [loadingAi, setLoadingAi] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuccess, setAiSuccess] = useState('');
 
   useEffect(() => {
     // Load from localStorage
@@ -27,7 +34,36 @@ export default function SettingsPage() {
         webhookSecret: 'utserangkitasemua',
       });
     }
+
+    // Fetch AI Status
+    fetchAiStatus();
   }, []);
+
+  const fetchAiStatus = async () => {
+    try {
+      const res = await getAiStatus();
+      setAiEnabled(res.enabled);
+    } catch (err) {
+      console.error('Failed to fetch AI status:', err);
+    }
+  };
+
+  const handleToggleAi = async () => {
+    setLoadingAi(true);
+    setAiError('');
+    setAiSuccess('');
+    try {
+      const newState = !aiEnabled;
+      await setAiStatus(newState);
+      setAiEnabled(newState);
+      setAiSuccess(newState ? 'AI System enabled successfully' : 'AI System disabled successfully');
+      setTimeout(() => setAiSuccess(''), 3000);
+    } catch (err: any) {
+      setAiError(err.message || 'Failed to toggle AI settings');
+    } finally {
+      setLoadingAi(false);
+    }
+  };
 
   const handleSave = () => {
     localStorage.setItem('waha_config', JSON.stringify(config));
@@ -36,42 +72,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      {/* Sidebar */}
-      <aside className="flex w-16 flex-col items-center gap-6 bg-slate-900 py-6 text-white">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 font-semibold text-sm">
-          WA
-        </div>
-        <nav className="flex flex-col gap-4">
-          <button 
-            className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"
-            onClick={() => window.location.href = '/'}
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-            </svg>
-            <span className="absolute left-full ml-2 hidden group-hover:block whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs">
-              Inbox
-            </span>
-          </button>
-        </nav>
-        <div className="mt-auto flex flex-col gap-4">
-          <button 
-            className="group relative flex h-10 w-10 items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="absolute left-full ml-2 hidden group-hover:block whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs">
-              Settings
-            </span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
+    <div className="flex-1 overflow-y-auto bg-slate-50 h-full">
+      <div className="p-8">
         <div className="mx-auto max-w-3xl">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Settings</h1>
@@ -101,10 +103,20 @@ export default function SettingsPage() {
               >
                 User Management
               </button>
+              <button
+                onClick={() => setActiveTab('ai')}
+                className={`pb-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'ai'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                AI Settings
+              </button>
             </nav>
           </div>
 
-          {activeTab === 'general' ? (
+          {activeTab === 'general' && (
           <div className="rounded-lg bg-white p-6 shadow-sm">
             <h2 className="mb-6 text-xl font-semibold text-slate-900">API Configuration</h2>
 
@@ -207,11 +219,69 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-          ) : (
-            <UserManagement />
+          )}
+
+          {activeTab === 'users' && <UserManagement />}
+
+          {activeTab === 'ai' && (
+            <div className="rounded-lg bg-white p-6 shadow-sm">
+              <h2 className="mb-6 text-xl font-semibold text-slate-900">Global AI Settings</h2>
+              
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 border border-slate-200 rounded-lg">
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-900">Enable AI Auto-Reply</h3>
+                    <p className="text-sm text-slate-500 mt-1">
+                      When enabled, the AI will automatically reply to messages in conversations set to "AI Mode".
+                      <br />
+                      Disable this to stop all AI replies globally (Panic Button).
+                    </p>
+                  </div>
+                  
+                  <button
+                    onClick={handleToggleAi}
+                    disabled={loadingAi}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      aiEnabled ? 'bg-blue-600' : 'bg-slate-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        aiEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {aiSuccess && (
+                  <div className="p-4 rounded-lg bg-green-50 text-green-700 text-sm font-medium border border-green-200">
+                    ✓ {aiSuccess}
+                  </div>
+                )}
+
+                {aiError && (
+                  <div className="p-4 rounded-lg bg-red-50 text-red-700 text-sm font-medium border border-red-200">
+                    ⚠ {aiError}
+                  </div>
+                )}
+
+                <div className="rounded-lg bg-blue-50 p-4">
+                  <div className="flex gap-3">
+                    <svg className="h-5 w-5 flex-shrink-0 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="text-sm text-blue-800">
+                      <p className="font-medium mb-1">Note:</p>
+                      <p>This setting applies globally to the entire application.</p>
+                      <p>If disabled, conversations in "AI Mode" will receive messages but the AI will NOT reply.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

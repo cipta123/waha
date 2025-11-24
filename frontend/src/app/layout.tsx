@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased bg-slate-50 text-slate-900 flex h-screen overflow-hidden`}>
+      <body className={`${inter.variable} antialiased bg-slate-50 text-slate-900 flex h-screen w-full overflow-hidden`}>
         <Sidebar />
         {children}
       </body>

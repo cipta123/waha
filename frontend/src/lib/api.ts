@@ -25,11 +25,16 @@ interface ApiFetchOptions extends RequestInit {
 
 async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = `${BASE_URL}${path}`;
+  
+  // Get token from localStorage
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  
   const init: RequestInit = {
     cache: 'no-store',
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
   };
@@ -80,6 +85,12 @@ export interface Conversation {
   mode: 'ai' | 'human';
   lastAiReplyAt?: string;
   handoffReason?: string;
+  owner?: {
+    id: string;
+    username: string;
+    fullName: string;
+    role: string;
+  } | null;
   lastMessage?: {
     id: string;
     text: string;
@@ -122,7 +133,15 @@ export interface MessagesResponse {
 }
 
 export const fetchHealth = () => apiFetch<HealthResponse>('/health');
-export const fetchConversations = () => apiFetch<Conversation[]>('/messages/conversations');
+export const fetchConversations = (params?: { limit?: number; type?: 'all' | 'my' | 'queue'; userId?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.type) query.append('type', params.type);
+  if (params?.userId) query.append('userId', params.userId);
+  
+  const queryString = query.toString();
+  return apiFetch<Conversation[]>(`/messages/conversations${queryString ? '?' + queryString : ''}`);
+};
 export const fetchMessages = (conversationId: string, limit = 50, offset = 0) =>
   apiFetch<MessagesResponse>(`/messages/${conversationId}?limit=${limit}&offset=${offset}`);
 export const fetchSessions = () => apiFetch<SessionSummary[]>('/sessions');
@@ -178,4 +197,103 @@ export const fetchMessageReports = (params: {
     }
   });
   return ragApiFetch<any>(`/reports/messages?${query.toString()}`);
+};
+
+// ---- Queue Settings ----
+export const getQueueStatus = () => {
+  return apiFetch<{ enabled: boolean; message: string }>('/settings/queue-enabled');
+};
+
+export const setQueueStatus = (enabled: boolean) => {
+  return apiFetch<{ success: boolean; enabled: boolean; message: string }>(
+    '/settings/queue-enabled',
+    {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }
+  );
+};
+
+export const getAiStatus = () => {
+  return apiFetch<{ enabled: boolean; message: string }>('/settings/ai-enabled');
+};
+
+export const setAiStatus = (enabled: boolean) => {
+  return apiFetch<{ success: boolean; enabled: boolean; message: string }>(
+    '/settings/ai-enabled',
+    {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }
+  );
+};
+
+// ---- Conversation Assignment ----
+export const assignConversation = (conversationId: string, userId: string) => {
+  return apiFetch<{ success: boolean; conversationId: string; assignedTo: any }>(
+    `/messages/${conversationId}/assign`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }
+  );
+};
+
+export const unassignConversation = (conversationId: string) => {
+  return apiFetch<{ success: boolean; conversationId: string; message: string }>(
+    `/messages/${conversationId}/unassign`,
+    {
+      method: 'POST',
+    }
+  );
+};
+
+export const resolveConversation = (conversationId: string, notes?: string) => {
+  return apiFetch<{ success: boolean; conversationId: string; message: string; resolvedBy: any }>(
+    `/messages/${conversationId}/resolve`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }
+  );
+};
+
+export const transferConversation = (conversationId: string, fromUserId: string, toUserId: string) => {
+  return apiFetch<{ success: boolean; conversationId: string; message: string; transferredFrom: any; transferredTo: any }>(
+    `/messages/${conversationId}/transfer`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ fromUserId, toUserId }),
+    }
+  );
+};
+
+export const deleteConversation = (conversationId: string) => {
+  return apiFetch<{ success: boolean; id: string }>(
+    `/messages/${conversationId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+};
+
+export const deleteMessage = (messageId: string) => {
+  return apiFetch<{ success: boolean; id: string }>(
+    `/messages/msg/${messageId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+};
+
+// ---- Users ----
+export interface User {
+  id: string;
+  username: string;
+  fullName: string;
+  role: string;
+}
+
+export const fetchUsers = () => {
+  return apiFetch<User[]>('/users');
 };
