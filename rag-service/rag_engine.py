@@ -12,6 +12,8 @@ from groq import Groq
 import google.generativeai as genai
 from rank_bm25 import BM25Okapi
 import re
+import os
+from utm_service import UTMService
 
 
 class RAGEngine:
@@ -24,6 +26,19 @@ class RAGEngine:
         self._initialize_text_splitter()
         self._initialize_bm25()
         self._initialize_agent()
+        self._initialize_utm_service()
+
+    def _initialize_utm_service(self):
+        """Initialize UTM Service for exam schedule lookup"""
+        # Hardcoded path as requested, ensure robust path handling
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        csv_path = os.path.join(current_dir, "web", "public", "daftar_utm_2")
+        
+        # Fallback to absolute path if relative fails
+        if not os.path.exists(csv_path):
+             csv_path = r"c:\server1\htdocs\waha\rag-service\web\public\daftar_utm_2"
+             
+        self.utm_service = UTMService(csv_path)
         
     def _initialize_vector_db(self):
         """Initialize ChromaDB vector database"""
@@ -366,6 +381,53 @@ class RAGEngine:
         # Preprocess query for better retrieval
         # Add common variations and synonyms
         query_expanded = query
+        
+        # UTM Schedule Lookup
+        utm_context = ""
+        utm_sources = []
+        
+        # Regex for 9 digit NIM (simple validation)
+        nim_match = re.search(r'\b\d{9}\b', query)
+        if nim_match:
+            nim = nim_match.group(0)
+            
+            # Determine if we should search for UTM data
+            should_search_utm = False
+            
+            # 1. Explicit keywords in current query
+            if any(k in query.lower() for k in ['ujian', 'utm', 'lokasi', 'jadwal', 'kapan', 'dimana', 'ruang', 'kursi']):
+                should_search_utm = True
+            
+            # 2. Contextual check: Did the AI just ask for NIM or talk about exams?
+            # This handles the case where user replies with just the NIM
+            elif history:
+                # Get last assistant message
+                last_ai_msg = next((msg['content'].lower() for msg in reversed(history) if msg['role'] == 'assistant'), "")
+                if any(k in last_ai_msg for k in ['nim', 'nomor induk', 'ujian', 'jadwal', 'informasi']):
+                    should_search_utm = True
+            
+            if should_search_utm:
+                utm_data = self.utm_service.search_by_nim(nim)
+                
+                if utm_data:
+                    print(f"UTM Data found for NIM {nim}: {len(utm_data)} records")
+                    utm_text_list = []
+                    student_name = ""
+                    for item in utm_data:
+                        student_name = item.get('Nama', 'Mahasiswa')
+                        # Format: Hari 1 Ruang 131 Kursi 15 Lokasi SMP N 4 Kota Tangerang
+                        info = f"- Hari ke-{item.get('UTM hari ke-', '?')}: Ruang {item.get('Ruang', '?')}, Kursi {item.get('Kursi', '?')}, Lokasi {item.get('Lokasi Ujian', '?')}"
+                        utm_text_list.append(info)
+                    
+                    utm_context = f"DATA JADWAL UTM MAHASISWA (NIM {nim} - {student_name}):\n" + "\n".join(utm_text_list) + "\n\n"
+                    
+                    # Add as explicit source
+                    utm_sources = [{
+                        "content": f"Jadwal UTM NIM {nim} ({student_name}):\n" + "\n".join(utm_text_list),
+                        "metadata": {"source": "Database UTM", "type": "exam_schedule", "nim": nim},
+                        "score": 1.0
+                    }]
+
         if "manajemen" in query.lower():
             query_expanded = f"{query} OR management OR pengelolaan"
         elif "ekonomi" in query.lower():
@@ -452,6 +514,11 @@ class RAGEngine:
         # Prepare context from retrieved documents
         context = "\n\n".join([doc.page_content for doc in docs])
         
+        # Inject UTM Context (Priority High)
+        if utm_context:
+            print("Injecting UTM context into prompt")
+            context = utm_context + "INFORMASI TAMBAHAN DARI DOKUMEN LAIN:\n" + context
+
         # Build conversation history string
         history_str = ""
         if history:
@@ -509,6 +576,9 @@ Jawaban:"""
         
         # Prepare sources
         sources = []
+        # Add UTM sources first
+        sources.extend(utm_sources)
+        
         for doc in docs:
             sources.append({
                 "content": doc.page_content,

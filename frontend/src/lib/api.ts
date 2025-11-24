@@ -292,8 +292,22 @@ export interface User {
   username: string;
   fullName: string;
   role: string;
+  createdAt: string;
 }
 
 export const fetchUsers = () => {
   return apiFetch<User[]>('/users');
+};
+
+export const createUser = (userData: any) => {
+  return apiFetch<User>('/users', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  });
+};
+
+export const deleteUser = (userId: string) => {
+  return apiFetch<{ success: boolean }>(`/users/${userId}`, {
+    method: 'DELETE',
+  });
 };

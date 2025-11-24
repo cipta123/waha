@@ -1,14 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-interface User {
-  id: string;
-  username: string;
-  fullName: string;
-  role: string;
-  createdAt: string;
-}
+import { fetchUsers, createUser, deleteUser, User } from '@/lib/api';
 
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
@@ -25,23 +18,13 @@ export function UserManagement() {
   });
 
   useEffect(() => {
-    fetchUsers();
+    loadUsers();
   }, []);
 
-  async function fetchUsers() {
+  async function loadUsers() {
     setLoading(true);
-    const token = localStorage.getItem('token');
     try {
-      const res = await fetch('http://localhost:4000/api/users', {
-        headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!res.ok) throw new Error('Failed to fetch users');
-      
-      const data = await res.json();
+      const data = await fetchUsers();
       setUsers(data);
     } catch (err: any) {
       setError(err.message);
@@ -53,52 +36,26 @@ export function UserManagement() {
   async function handleDelete(id: string) {
     if (!confirm('Are you sure you want to delete this user?')) return;
 
-    const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`http://localhost:4000/api/users/${id}`, {
-        method: 'DELETE',
-        headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        }
-      });
-      
-      if (res.ok) {
-        setUsers(users.filter(u => u.id !== id));
-      } else {
-        alert('Failed to delete user');
-      }
-    } catch (err) {
+      await deleteUser(id);
+      setUsers(users.filter(u => u.id !== id));
+    } catch (err: any) {
       console.error(err);
-      alert('Error deleting user');
+      alert('Error deleting user: ' + err.message);
     }
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    const token = localStorage.getItem('token');
 
     try {
-      const res = await fetch('http://localhost:4000/api/users', {
-        method: 'POST',
-        headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Failed to create user');
-      }
-
-      await fetchUsers();
+      await createUser(formData);
+      await loadUsers();
       setShowAddModal(false);
       setFormData({ username: '', password: '', fullName: '', role: 'staff' });
     } catch (err: any) {
-      alert(err.message);
+      alert('Error creating user: ' + err.message);
     } finally {
       setSubmitting(false);
     }
