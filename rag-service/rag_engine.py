@@ -641,7 +641,8 @@ Jawaban:"""
         category: Optional[str] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        qa_id: Optional[str] = None
+        qa_id: Optional[str] = None,
+        skip_rebuild: bool = False
     ) -> str:
         """
         Add a Q&A pair to the knowledge base
@@ -653,6 +654,7 @@ Jawaban:"""
             tags: List of tags
             metadata: Additional metadata
             qa_id: Optional unique identifier
+            skip_rebuild: Skip rebuilding BM25 index (useful for batch ops)
             
         Returns:
             The Q&A ID
@@ -688,6 +690,10 @@ Jawaban:"""
             ids=[f"qa_{qa_id}"]
         )
         
+        # Rebuild BM25 index to include new Q&A pair
+        if not skip_rebuild:
+            self._rebuild_bm25_index()
+        
         return qa_id
     
     def add_qa_batch(self, qa_pairs: List[Dict[str, Any]]) -> List[str]:
@@ -707,9 +713,13 @@ Jawaban:"""
                 answer=qa.get('answer'),
                 category=qa.get('category'),
                 tags=qa.get('tags'),
-                metadata=qa.get('metadata', {})
+                metadata=qa.get('metadata', {}),
+                skip_rebuild=True
             )
             qa_ids.append(qa_id)
+        
+        # Rebuild index once after batch processing
+        self._rebuild_bm25_index()
         
         return qa_ids
     
