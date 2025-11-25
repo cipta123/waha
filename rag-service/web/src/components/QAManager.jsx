@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { MessageCircle, Plus, Trash2, RefreshCw, Tag, FolderOpen, Calendar, Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { addQAPair, listQAPairs, deleteQAPair } from '../api'
+import { MessageCircle, Plus, Trash2, RefreshCw, Tag, FolderOpen, Calendar, Search, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
+import { addQAPair, listQAPairs, deleteQAPair, updateQAPair } from '../api'
 
 export default function QAManager() {
   const [qaPairs, setQAPairs] = useState([])
@@ -17,6 +17,7 @@ export default function QAManager() {
   const [itemsPerPage] = useState(10)
   
   // Form state
+  const [editingId, setEditingId] = useState(null)
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
   const [category, setCategory] = useState('')
@@ -63,6 +64,15 @@ export default function QAManager() {
     }
   }
 
+  const resetForm = () => {
+    setQuestion('')
+    setAnswer('')
+    setCategory('')
+    setTags('')
+    setEditingId(null)
+    setShowForm(false)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     
@@ -70,24 +80,35 @@ export default function QAManager() {
       setSubmitting(true)
       const tagsArray = tags.split(',').map(t => t.trim()).filter(t => t)
       
-      await addQAPair(question, answer, category || null, tagsArray)
+      if (editingId) {
+        await updateQAPair(editingId, question, answer, category || null, tagsArray)
+        alert('Q&A pair updated successfully!')
+      } else {
+        await addQAPair(question, answer, category || null, tagsArray)
+        alert('Q&A pair added successfully!')
+      }
       
       // Reset form
-      setQuestion('')
-      setAnswer('')
-      setCategory('')
-      setTags('')
-      setShowForm(false)
+      resetForm()
       
       // Reload list
       await loadQAPairs()
       
-      alert('Q&A pair added successfully!')
     } catch (error) {
-      alert('Failed to add Q&A pair: ' + error.message)
+      alert(`Failed to ${editingId ? 'update' : 'add'} Q&A pair: ` + error.message)
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleEdit = (qa) => {
+    setQuestion(qa.question)
+    setAnswer(qa.answer)
+    setCategory(qa.category || '')
+    setTags(qa.tags ? qa.tags.join(', ') : '')
+    setEditingId(qa.qa_id)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleDelete = async (qaId) => {
@@ -147,7 +168,14 @@ export default function QAManager() {
               Refresh
             </button>
             <button
-              onClick={() => setShowForm(!showForm)}
+              onClick={() => {
+                if (showForm && !editingId) {
+                  resetForm()
+                } else {
+                  resetForm() // Clear any edit state
+                  setShowForm(true)
+                }
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -157,10 +185,12 @@ export default function QAManager() {
         </div>
       </div>
 
-      {/* Add Form */}
+      {/* Add/Edit Form */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Q&A Pair</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            {editingId ? 'Edit Q&A Pair' : 'Add New Q&A Pair'}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -224,11 +254,11 @@ export default function QAManager() {
                 disabled={submitting}
                 className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {submitting ? 'Adding...' : 'Add Q&A Pair'}
+                {submitting ? 'Saving...' : (editingId ? 'Update Q&A Pair' : 'Add Q&A Pair')}
               </button>
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={resetForm}
                 className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Cancel
@@ -240,9 +270,9 @@ export default function QAManager() {
 
       {/* Search & Filter */}
       <div className="bg-white rounded-xl shadow-md p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
@@ -256,7 +286,7 @@ export default function QAManager() {
           </div>
 
           {/* Category Filter */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 md:col-span-1">
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
@@ -367,13 +397,22 @@ export default function QAManager() {
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => handleDelete(qa.qa_id)}
-                    className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Delete Q&A pair"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex ml-4">
+                    <button
+                      onClick={() => handleEdit(qa)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit Q&A pair"
+                    >
+                      <Pencil className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(qa.qa_id)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Q&A pair"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

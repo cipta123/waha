@@ -701,6 +701,52 @@ async def list_qa_pairs():
         )
 
 
+@app.put("/qa/{qa_id}", response_model=QAResponse, tags=["Q&A Knowledge Base"])
+async def update_qa_pair(qa_id: str, qa: QAInput):
+    """
+    Update a Q&A pair in the knowledge base
+    
+    - **qa_id**: ID of the Q&A pair to update
+    - **question**: The new question
+    - **answer**: The new answer
+    - **category**: Optional category/topic
+    - **tags**: Optional tags
+    """
+    try:
+        logger.info(f"Updating Q&A pair: {qa_id}")
+        
+        success = rag_engine.update_qa_pair(
+            qa_id=qa_id,
+            question=qa.question,
+            answer=qa.answer,
+            category=qa.category,
+            tags=qa.tags,
+            metadata=qa.metadata
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Q&A pair not found: {qa_id}"
+            )
+        
+        logger.info(f"Q&A pair updated: {qa_id}")
+        
+        return QAResponse(
+            success=True,
+            message="Q&A pair updated successfully",
+            qa_ids=[qa_id]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update Q&A pair: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update Q&A pair: {str(e)}"
+        )
+
+
 @app.delete("/qa/{qa_id}", tags=["Q&A Knowledge Base"])
 async def delete_qa_pair(qa_id: str):
     """

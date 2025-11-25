@@ -52,6 +52,9 @@ export const searchDocuments = (query, limit = 10) =>
 export const addQAPair = (question, answer, category = null, tags = [], metadata = {}) =>
   api.post('/qa', { question, answer, category, tags, metadata });
 
+export const updateQAPair = (qaId, question, answer, category = null, tags = [], metadata = {}) =>
+  api.put(`/qa/${qaId}`, { question, answer, category, tags, metadata });
+
 export const addQABatch = (qaPairs) =>
   api.post('/qa/batch', { qa_pairs: qaPairs });
 

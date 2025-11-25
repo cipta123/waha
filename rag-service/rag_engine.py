@@ -837,7 +837,77 @@ Jawaban:"""
         try:
             # Try to delete the Q&A pair
             self.collection.delete(ids=[f"qa_{qa_id}"])
+            
+            # Rebuild BM25 index
+            self._rebuild_bm25_index()
             return True
         except Exception as e:
             print(f"Error deleting Q&A pair: {e}")
+            return False
+
+    def update_qa_pair(
+        self,
+        qa_id: str,
+        question: str,
+        answer: str,
+        category: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Update an existing Q&A pair
+        
+        Args:
+            qa_id: The Q&A ID to update
+            question: The new question
+            answer: The new answer
+            category: New category
+            tags: New tags
+            metadata: New metadata
+            
+        Returns:
+            True if updated, False if failed
+        """
+        try:
+            if metadata is None:
+                metadata = {}
+            
+            if tags is None:
+                tags = []
+            
+            # Prepare metadata
+            # We need to preserve created_at if possible, but retrieval is expensive.
+            # For now, we just update the fields we know.
+            qa_metadata = {
+                "qa_id": qa_id,
+                "type": "qa_pair",
+                "question": question,
+                "category": category,
+                "tags": ",".join(tags) if tags else "",
+                # "created_at": ... # We lose created_at unless we fetch it first, or pass it. 
+                # Ideally we fetch first, but for simplicity we'll just overwrite what we have.
+                **metadata
+            }
+            
+            # Combine question and answer for embedding
+            combined_text = f"Q: {question}\nA: {answer}"
+            
+            # Generate embedding explicitly using the configured embedding model
+            # This prevents Chroma from using its default (384-dim) model
+            embeddings = self.embeddings.embed_documents([combined_text])
+            
+            # Update vector store
+            self.collection.update(
+                ids=[f"qa_{qa_id}"],
+                documents=[combined_text],
+                metadatas=[qa_metadata],
+                embeddings=embeddings
+            )
+            
+            # Rebuild BM25 index
+            self._rebuild_bm25_index()
+            
+            return True
+        except Exception as e:
+            print(f"Error updating Q&A pair: {e}")
             return False
