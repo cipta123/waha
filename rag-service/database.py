@@ -75,6 +75,16 @@ class Database:
                         INDEX idx_user_created (user_id, created_at)
                     )
                 """)
+
+                # Create settings table (for dynamic configuration)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key_name VARCHAR(50) PRIMARY KEY,
+                        value TEXT,
+                        description VARCHAR(255),
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                """)
                 
                 # Check if new columns exist (for existing tables)
                 try:
@@ -310,3 +320,42 @@ class Database:
             conn.close()
         except Error as e:
             print(f"Database error in add_message: {e}")
+
+    def get_setting(self, key_name: str, default: str = None) -> str:
+        """Get a setting value by key"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key_name = %s", (key_name,))
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return result[0] if result else default
+        except Error as e:
+            print(f"Database error in get_setting: {e}")
+            return default
+
+    def update_setting(self, key_name: str, value: str, description: str = None):
+        """Update or insert a setting"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if description:
+                cursor.execute(
+                    "INSERT INTO settings (key_name, value, description) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE value = %s, description = %s",
+                    (key_name, value, description, value, description)
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO settings (key_name, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = %s",
+                    (key_name, value, value)
+                )
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+        except Error as e:
+            print(f"Database error in update_setting: {e}")
+            return False

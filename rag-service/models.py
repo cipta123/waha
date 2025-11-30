@@ -332,3 +332,10 @@ class ReportResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SettingInput(BaseModel):
+    """Input model for updating settings"""
+    key: str
+    value: str
+    description: Optional[str] = None

@@ -353,7 +353,8 @@ class RAGEngine:
         query: str, 
         top_k: Optional[int] = None,
         temperature: Optional[float] = None,
-        history: Optional[List[Dict[str, str]]] = None
+        history: Optional[List[Dict[str, str]]] = None,
+        system_instruction: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Query the RAG system with a question
@@ -363,6 +364,7 @@ class RAGEngine:
             top_k: Number of documents to retrieve (default from settings)
             temperature: LLM temperature (default from settings)
             history: Conversation history
+            system_instruction: Optional custom system prompt (overrides default)
             
         Returns:
             Dictionary with answer and sources
@@ -527,7 +529,10 @@ class RAGEngine:
                 history_str += f"{role}: {msg['content']}\n"
 
         # Create prompt with history
-        prompt = f"""Anda adalah asisten customer service Universitas Terbuka yang profesional dan membantu.
+        if system_instruction:
+            base_instruction = system_instruction
+        else:
+            base_instruction = """Anda adalah asisten customer service Universitas Terbuka yang profesional dan membantu.
 
 INSTRUKSI:
 1. Jawab pertanyaan dengan JELAS dan INFORMATIF berdasarkan RIWAYAT PERCAKAPAN dan KONTEKS.
@@ -539,7 +544,9 @@ INSTRUKSI:
 5. Format jawaban dengan struktur yang jelas (gunakan bullet points, numbering, atau paragraf pendek).
 6. Jika tidak ada informasi, katakan: "Informasi tidak tersedia dalam dokumen".
 7. DI AKHIR JAWABAN, SELALU berikan 1-2 pertanyaan lanjutan yang relevan (Call to Action).
-   Contoh: "Apakah Anda ingin mengetahui syarat pengambilannya?" atau "Apakah ada hal lain yang ingin ditanyakan mengenai biaya?"
+   Contoh: "Apakah Anda ingin mengetahui syarat pengambilannya?" atau "Apakah ada hal lain yang ingin ditanyakan mengenai biaya?" """
+
+        prompt = f"""{base_instruction}
 
 RIWAYAT PERCAKAPAN:
 {history_str}

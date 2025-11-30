@@ -64,4 +64,9 @@ export const deleteQAPair = (qaId) => api.delete(`/qa/${qaId}`);
 
 export const getAnalytics = (days = 7) => api.get(`/analytics?days=${days}`);
 
+// Settings endpoints
+export const getSetting = (key) => api.get(`/settings/${key}`);
+export const updateSetting = (key, value, description = null) => 
+  api.post('/settings', { key, value, description });
+
 export default api;

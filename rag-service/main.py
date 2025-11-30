@@ -25,7 +25,8 @@ from models import (
     WebhookResponse,
     LogMessage,
     LogMessage,
-    ReportResponse
+    ReportResponse,
+    SettingInput
 )
 from rag_engine import RAGEngine
 from document_parser import DocumentParser
@@ -163,10 +164,14 @@ async def webhook_whatsapp(msg: WhatsAppMessage):
                 session = session_manager.get_session(msg.sender_id)
                 history = session.get("history", [])[-5:] # Last 5 messages
                 
+                # Get system prompt from settings (if available)
+                system_prompt = session_manager.db.get_setting("system_prompt")
+                
                 # Perform RAG Query
                 result = rag_engine.query(
                     query=msg.message,
-                    history=history
+                    history=history,
+                    system_instruction=system_prompt
                 )
                 answer = result["answer"]
                 # intent remains from classifier or could be refined by RAG
@@ -403,11 +408,15 @@ async def query_rag(query_input: QueryInput):
     try:
         logger.info(f"Processing query: {query_input.query[:100]}...")
         
+        # Get system prompt from settings (if available)
+        system_prompt = session_manager.db.get_setting("system_prompt")
+        
         result = rag_engine.query(
             query=query_input.query,
             top_k=query_input.top_k,
             temperature=query_input.temperature,
-            history=[msg.dict() for msg in query_input.history]  # Pass history
+            history=[msg.dict() for msg in query_input.history],  # Pass history
+            system_instruction=system_prompt
         )
         
         logger.info(f"Query processed successfully")
@@ -777,7 +786,42 @@ async def delete_qa_pair(qa_id: str):
         )
 
 
+@app.get("/settings/{key}", tags=["Settings"])
+async def get_setting(key: str):
+    """Get a setting value by key"""
+    try:
+        value = session_manager.db.get_setting(key)
+        return {"key": key, "value": value}
+    except Exception as e:
+        logger.error(f"Failed to get setting: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get setting: {str(e)}"
+        )
 
+
+@app.post("/settings", tags=["Settings"])
+async def update_setting(setting: SettingInput):
+    """Update or create a setting"""
+    try:
+        success = session_manager.db.update_setting(
+            setting.key, 
+            setting.value, 
+            setting.description
+        )
+        if success:
+            return {"success": True, "message": f"Setting '{setting.key}' updated successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update setting"
+            )
+    except Exception as e:
+        logger.error(f"Failed to update setting: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update setting: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
